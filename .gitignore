@@ -1,3 +1,41 @@
+<<<<<<< HEAD
 .env
 venv
 __pycache__
+=======
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Environment and package
+.env
+.venv/
+venv/
+env/
+
+# log/history/lh
+.lh
+.lh/
+.history
+.history/
+
+# pytest cache
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+
+# build systems
+build/
+dist/
+*.egg
+.eggs/
+
+# Supabase/Cloud/Local config
+.supabase/
+.local/
+
+>>>>>>> 425aa6b (add forecasting subagent)
