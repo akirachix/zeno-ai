@@ -1,0 +1,10 @@
+Scenario: {commodity} {shock_type} of {pct}% in {country} over the next {months} months.
+
+Before: {base_prices}
+After: {scenario_prices}
+
+Explanation:
+{commodity} prices in {country} would likely {direction} by {pct}%, changing from an average of {base_prices} to {scenario_prices} over the next {months} months. 
+This may impact farmer income, market supply, and exports. Please note this is a simplified estimate.
+
+Source: {source}
