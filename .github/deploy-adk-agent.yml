@@ -29,15 +29,13 @@ jobs:
 
     - name: Install ADK
       run: pip install google-adk
-    
-    
+
     - name: Deploy to Cloud Run
       working-directory: .
       run: |
         adk deploy cloud_run \
           --project=${{ secrets.GCP_PROJECT_ID }} \
-          --service_name=events-agent \
-          --app_name=events-agent \
+          --service_name=multi-tool-agent \
+          --app_name=multi-tool-agent \
           --region=europe-west1 \
-          ./events_agent
-    
+          ./agent/zeno-ai/multi_tool_agent
