@@ -1,69 +1,57 @@
-<<<<<<< HEAD
-.env
-venv
-__pycache__
-<<<<<<< HEAD
+# Python bytecode and cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# Database files
 *.db
 *.sqlite3
+
+# Environment files and folders
+.env
+venv/
+.venv/
+env/
+myenv/
+adk-env/
+zenoai/
 
 # Miniconda installer
 Miniconda3-latest-Linux-x86_64.sh
 
-# VSCode, history, local history
+# Editor folders/files
 .vscode/
 .history/
+.history
+.lh/
+.lh
 *.lh
 
-# Environment/venv
-myenv/
-venv/
-.env
-# Cloud SDK
+# Supabase/Cloud SDK/Local config
+.supabase/
 google-cloud-sdk/
 google-cloud-cli-linux-x86_64.tar.gz
+.local/
 
-# Static assets 
+# Static assets
 static/
-=======
-=======
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-*.so
 
-# Environment and package
-.env
-.venv/
-venv/
-env/
-
-# log/history/lh
-.lh
-.lh/
-.history
-.history/
-
-# pytest cache
-.pytest_cache/
-
-# mypy
-.mypy_cache/
-
-# build systems
+# Build systems
 build/
 dist/
 *.egg
 .eggs/
 
-# Supabase/Cloud/Local config
-.supabase/
-.local/
+# Test/mypy cache
+.pytest_cache/
+.mypy_cache/
 
->>>>>>> 425aa6b (add forecasting subagent)
->>>>>>> efdb91a18c0f493212c13002f23f097d0623bb60
+# OS or temp files
+.DS_Store
+*.swp
+*.swo
+*.bak
+*.tmp
+*~
+*.log
