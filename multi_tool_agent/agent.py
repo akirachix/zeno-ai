@@ -1,8 +1,8 @@
 import os
+import re
 from dotenv import load_dotenv
 from datetime import datetime
-
-from google.adk.agents.llm_agent import Agent
+from typing import Optional, Dict, Any
 from google.adk.agents import Agent as ADKAgent
 from google.adk.tools.agent_tool import AgentTool
 
@@ -10,23 +10,24 @@ from .tools.db import get_trade_data, semantic_search_rag_embeddings
 from .tools.graphing import plot_price_scenario
 from .scenario import ScenarioSubAgent
 from .comparative import comparative_agent
-# from .forecasting import forecast_trade_agent
-# from .scenario import scenario_analysis_agent
+from .forecasting import ForecastingAgent
+from .rag_tools import ask_knowledgebase
 
 SUPPORTED_COUNTRIES = {"kenya", "rwanda", "tanzania", "uganda", "ethiopia"}
 SUPPORTED_COMMODITIES = {"maize", "coffee", "tea"}
 
-def load_prompt(filename):
+load_dotenv()
+
+def load_prompt(filename: str) -> str:
+    """Load a prompt file from the prompts directory."""
     prompts_dir = os.path.join(os.path.dirname(__file__), "prompts")
     with open(os.path.join(prompts_dir, filename), encoding="utf-8") as f:
         return f.read().strip()
 
-load_dotenv()
-
 def is_in_scope(query: str) -> bool:
     q = query.lower()
-    return (any(c in q for c in SUPPORTED_COUNTRIES)
-            and any(prod in q for prod in SUPPORTED_COMMODITIES))
+    return (any(c in q for c in SUPPORTED_COUNTRIES) and
+            any(prod in q for prod in SUPPORTED_COMMODITIES))
 
 def parse_query(query: str):
     q = query.lower()
@@ -44,7 +45,9 @@ def summarize_articles(articles):
         summary_lines.append(f"- Article {idx}: {snippet}")
     return "\n".join(summary_lines)
 
+
 def scenario_tool(user_query: str) -> dict:
+    """Main scenario analysis tool logic."""
     thought_process = []
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     thought_process.append(f"[Time] {now_str}")
@@ -77,11 +80,8 @@ def scenario_tool(user_query: str) -> dict:
             if meta:
                 source_val = getattr(meta, "source", None) or meta.get("source")
                 updated_val = getattr(meta, "updated_at", None) or meta.get("updated_at")
-                if updated_val:
-                    updated_str = str(updated_val)[:10]
-                    source_str = f"{source_val}, updated {updated_str}"
-                else:
-                    source_str = f"{source_val}" if source_val else "Unknown source"
+                updated_str = str(updated_val)[:10] if updated_val else None
+                source_str = f"{source_val}, updated {updated_str}" if updated_str else f"{source_val}" if source_val else "Unknown source"
             else:
                 source_str = "Unknown source"
             summary = (
@@ -133,54 +133,148 @@ def scenario_tool(user_query: str) -> dict:
     result["thought_process"] = thought_process
     return result
 
-# Register comparative and (optionally) scenario/forecast tools
-comparative_tool = AgentTool(comparative_agent)
-# forecast_tool = AgentTool(forecast_trade_agent)
-scenario_agent_tool = AgentTool(scenario_tool)
+forecasting_agent = ForecastingAgent()
 
-# Root agent with scenario and comparative tools
+def forecast_trade(
+    commodity: str,
+    metric: str,
+    timeframe: str,
+    country: str,
+    model_type: Optional[str] = None,
+    conversation_id: Optional[int] = None,
+    run_id: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Forecast trade metrics (e.g., export_volume, price) for a commodity and country.
+    Normalizes commodity inputs (e.g., 'coffee' to 'coffee_arabica' for Kenya).
+    Validates inputs, calls ForecastingAgent, and formats results with explanations.
+    """
+    if not all([commodity, metric, timeframe, country]):
+        return {"error": "Missing required parameters: commodity, metric, timeframe, country"}
+
+    commodity = commodity.lower().strip()
+    metric = metric.lower().replace(" ", "_") 
+    country = country.lower().strip()
+
+    commodity_mapping = {
+        "coffee": "coffee_arabica" if country == "kenya" else "coffee_robusta",  
+        "tea": "tea"
+    }
+    normalized_commodity = commodity_mapping.get(commodity, commodity)
+
+    if not re.match(r"next \d+ (years|months)", timeframe.lower()):
+        return {"error": "Invalid timeframe format. Use 'next X years' or 'next X months'"}
+
+    params = {
+        "commodity": normalized_commodity,
+        "metric": metric,
+        "timeframe": timeframe,
+        "country": country,
+        "model_type": model_type,
+        "conversation_id": conversation_id,
+        "run_id": run_id,
+        "original_commodity": commodity  
+    }
+
+    try:
+        result = forecasting_agent.run(params)
+        if "error" in result:
+            return {"error": result["error"]}
+
+        forecast_value = result.get("forecast_value", "Unknown")
+        confidence = result.get("confidence", "Medium")
+        reasoning = result.get("reasoning", "")
+        sources = result.get("sources", [])
+
+        explanation = (
+            f"Based on analysis of recent reports:\n"
+            f" **Forecast**: {forecast_value}\n"
+            f" **Confidence**: {confidence}\n"
+            f" **Insight**: {reasoning}\n"
+            f" **Sources**: {', '.join(sources[:3])}{'...' if len(sources) > 3 else ''}"
+        )
+
+        return {
+            "result": result,
+            "explanation": explanation
+        }
+    except Exception as e:
+        return {"error": f"Forecasting failed: {str(e)}"}
+
+comparative_tool = AgentTool(comparative_agent)
+scenario_agent_tool = scenario_tool
+forecasting_tool = forecast_trade
+rag_tool = ask_knowledgebase 
+
 root_agent = ADKAgent(
-   name="zeno_root_agent",
-   model="gemini-2.5-flash",
-   description=(
-       "The Zeno Root Agent is the central orchestrator of the Zeno AI economic analysis platform. "
-       "It interprets economist queries and delegates them to specialized sub-agents for forecasting, scenario analysis, and comparative analytics."
-   ),
-   instruction=(
-       "Hello! I am Zeno, your lead economic analysis AI, here to help you with complex economic queries. My primary role is to act as a router, delegating user queries to the most appropriate sub-agent based on the user's intent. "
-       "I am rational, friendly, and have a deep understanding of economic principles. "
-       "Carefully analyze each query for keywords that indicate a specific type of analysis is needed. "
-       "Here are the rules for delegation: "
-       "1. Use the 'comparative_analysis_agent' tool when the user's query asks for a direct comparison, contrast, or analysis between two or more economic entities (e.g., 'compare exports of...', 'how do X and Y differ...'). "
-       "2. Use the 'forecast_trade' agent (as a tool) for any query that asks for future predictions or trends over time (e.g., 'what is the future trade outlook...', 'predict the next quarter's GDP...'). "
-       "3. Use the 'scenario_analysis' agent (as a tool) when the user poses a hypothetical 'what-if' question or asks to simulate an economic event (e.g., 'what if the oil price doubles...', 'simulate the impact of...'). "
-       "If no sub-agent is a perfect match, you should still attempt to use the most relevant one and provide a well-structured response based on that agent's capabilities."
-   ),
-   tools=[
-       comparative_tool,
-       # forecast_tool,
-       scenario_agent_tool,
-   ],
+    name="zeno_root_agent",
+    model="gemini-1.5-flash",
+    description=(
+        "The Zeno Root Agent is an AI Economist Assistant specialized in Kenyan Agricultural trade dynamics. "
+        "It combines deep economic theory knowledge with practical analytical tools for forecasting, scenario simulation, and cross-country comparison. "
+        "It serves economists by answering conceptual questions, explaining policy impacts, and executing data-driven simulations — all with transparency and source grounding."
+    ),
+    instruction=(
+        "You are Zeno, an AI Economist Assistant for Kenya Agricultural Trade. "
+        "Your role is to support Agro-trade economists by answering questions with economic rigor, executing analytical tasks, and providing actionable, explainable insights. "
+        "You have two modes of operation:\n\n"
+        "MODE 1: DIRECT KNOWLEDGE RESPONSE (No Tool Needed)\n"
+        " If the user asks about economic concepts, theories, policies, or general explanations (e.g., 'What is comparative advantage?', 'Explain the impact of tariffs on smallholder farmers', 'How does CGE modeling work?'), "
+        " RESPOND DIRECTLY using your fine-tuned economic knowledge. "
+        " Structure your answer: 1) Define the concept, 2) Give a Kenya/EAC-relevant example, 3) Mention policy implications, 4) Cite sources if known (e.g., 'According to World Bank 2023...', 'As modeled in KNBS reports...'). "
+        " If uncertain, say: 'I don't have enough context to answer confidently, but here's what I know...' — DO NOT HALLUCINATE.\n\n"
+        "MODE 2: TOOL-BASED ANALYSIS (Forecasting, Scenario, Comparative)\n"
+        " If the user asks for data-driven tasks (forecasting, simulating shocks, comparing countries), delegate to the correct tool:\n"
+        "   • FORECASTING: Use forecast_trade for predicting prices, volumes, revenues. Automatically select the best model unless specified. "
+        "   • SCENARIO: Use scenario_tool for 'what-if' shocks (drought, tariffs, fuel prices). Always retrieve baseline first.\n"
+        "   • COMPARATIVE: Use comparative_tool for Kenya vs. Uganda/Ethiopia/Tanzania comparisons on exports, policies, productivity.\n"
+        "   • RAG: Use ask_knowledgebase for semantic search Q&A from reports.\n"
+        " Extract parameters: commodity (maize/coffee/tea, defaulting to context-appropriate specifics like coffee_arabica for Kenya), country, metric (export_volume, price, revenue), timeframe, shock type/magnitude.\n"
+        " If commodity is ambiguous (e.g., 'coffee'), assume a default (e.g., Arabica for Kenya, Robusta for Ethiopia) and note the assumption in the response.\n"
+        " Validate entities against supported lists before calling tools.\n"
+        " After tool returns results, SYNTHESIZE them into a narrative: 'Here's what the model shows...', 'Key insight: ...', 'Policy implication: ...', 'Assumptions: ...', 'Sources: ...'. Explain model choice and commodity assumptions.\n\n"
+        " ALWAYS:\n"
+        " Ground responses in real data or economic theory — never guess.\n"
+        " Explain assumptions and limitations.\n"
+        " Use Kenya/EAC context for references.\n"
+        " Offer to visualize, export, or dive deeper.\n"
+        " For multi-turn chats: remember context, refer to past answers, and build on them.\n"
+        " If user uploads a file, acknowledge it and integrate insights if relevant.\n"
+        " End with a question or suggestion to keep conversation going.\n\n"
+        " NEVER:\n"
+        " Ask the user for technical details like model_type unless absolutely necessary.\n"
+        " Make up data or sources.\n"
+        " Give financial or policy advice without disclaimers.\n"
+        " Ignore user's request for explanations or sources.\n"
+        " Assume user knows economic jargon — explain terms like 'elasticity', 'CGE', 'VAR' when first used."
+    ),
+    tools=[
+        forecasting_tool,
+        scenario_agent_tool,
+        comparative_tool,
+        rag_tool,
+    ],
 )
 
 def main():
-   if not os.getenv("GOOGLE_API_KEY"):
-       print("CRITICAL ERROR: GOOGLE_API_KEY environment variable is not set. The agent will not be able to connect to the model.")
-       return
+    """Main loop for interacting with the Zeno Root Agent."""
+    if not os.getenv("GOOGLE_API_KEY"):
+        print("CRITICAL ERROR: GOOGLE_API_KEY environment variable is not set. The agent will not be able to connect to the model.")
+        return
 
-   print("Zeno Root Agent ready. Type 'quit' to exit.")
-   while True:
-       user_input = input("You: ")
-       if user_input.strip().lower() in {"quit", "exit"}:
-           print("Exiting. Goodbye!")
-           break
-       try:
-           response = root_agent.run(user_input, tool_call_config={"allowed_tools": "any"})
-           final_response = getattr(response, "text", response)
-           print("Zeno:", final_response)
-       except Exception as e:
-           print(f"ERROR: An exception occurred during the agent's run.")
-           print(f"ERROR: Exception details: {e}")
+    print("Zeno Root Agent ready. Type 'quit' to exit.")
+    while True:
+        user_input = input("You: ")
+        if user_input.strip().lower() in {"quit", "exit"}:
+            print("Exiting. Goodbye!")
+            break
+        try:
+            response = root_agent.run(user_input, tool_call_config={"allowed_tools": "any"})
+            final_response = getattr(response, "text", response)
+            print("Zeno:", final_response)
+        except Exception as e:
+            print(f"ERROR: An exception occurred during the agent's run.")
+            print(f"ERROR: Exception details: {e}")
 
 if __name__ == "__main__":
-   main()
+    main()
