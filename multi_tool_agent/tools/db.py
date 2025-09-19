@@ -12,7 +12,7 @@ import google.generativeai as genai
 import psycopg2
 from sqlalchemy import create_engine, text
 
-# --- Environment Setup ---
+# Environment Setup
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -31,7 +31,7 @@ if not GOOGLE_API_KEY:
 engine = create_engine(DATABASE_URL)
 genai.configure(api_key=GOOGLE_API_KEY)
 
-# --- Gemini Embedding Functions ---
+# Gemini Embedding Functions 
 
 def get_text_embedding(text: str) -> Optional[List[float]]:
     """
@@ -66,7 +66,7 @@ def embed_text(text: str) -> Optional[List[float]]:
         traceback.print_exc()
         return None
 
-# --- Trade Data Queries ---
+# Trade Data Queries 
 
 def get_trade_data(commodity: str, country: str, last_n_months: int = 6, return_raw: bool = False) -> Dict[str, Any]:
     """
@@ -155,7 +155,7 @@ def get_trade_data_by_year(commodity: str, country: str, start_year: int, end_ye
         print(f"DB error in get_trade_data_by_year: {e}")
         return {"months": [], "prices": []}
 
-# --- RAG Embedding Search ---
+#  RAG Embedding Search
 
 def semantic_search_rag_embeddings(user_query: str, top_k: int = 5) -> List[Dict[str, Any]]:
     """

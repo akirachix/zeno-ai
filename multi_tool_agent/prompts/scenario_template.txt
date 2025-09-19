@@ -1,26 +1,22 @@
 Let's walk through this scenario together:
 
-**Commodity:** {commodity}  
-**Country:** {country}  
-**Shock:** {shock_type} by {percentage}%  
-**Timeframe:** Next {months} months
+Commodity: {commodity} Country: {country} Shock: {shock_type} by {percentage}% Timeframe: Next {months} months
 
-#### Step 1: Fetching historical data
-I retrieved the most recent {months} months of price data for {commodity} in {country}:
-> {base_prices}
+Step 1: Fetching historical data
+-I retrieved the most recent {months} months of price data for {commodity} in {country}:
+{base_prices}
 
-#### Step 2: Applying the scenario shock
-I simulated a {shock_type} of {percentage}%. Here are the projected prices:
-> {scenario_prices}
+Step 2: Applying the scenario shock
+-I simulated a {shock_type} of {percentage}%. Here are the projected prices:
+{scenario_prices}
 
-#### Step 3: Visualizing the impact
-I generated a chart comparing the historical trend with the scenario projection.
+Step 3: Visualizing the impact
+-I generated a chart comparing the historical trend with the scenario projection.
 
-#### Step 4: Interpreting the results
-- The baseline trend indicates recent market behavior.
-- The scenario line shows how a {shock_type} by {percentage}% could affect prices.
-- [You may briefly explain the direction here, e.g., "An increase in price may reduce demand."]
+Step 4: Interpreting the results
 
-**Source:** {source}
+-The baseline trend indicates recent market behavior.
+-The scenario line shows how a {shock_type} by {percentage}% could affect prices.
+-[You may briefly explain the direction here, e.g., "An increase in price may reduce demand."]
+Source: {source}
 
-Would you like to try another scenario, or see more details?

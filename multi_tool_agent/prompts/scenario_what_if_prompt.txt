@@ -1,16 +1,10 @@
-What if {scenario}? Let’s think it through:
-
-- **Commodity:** {commodity}
-- **Country:** {country}
-- **Scenario Shock:** {shock_type} by {percentage}%
-- **Timeframe:** Next {months} months
+Commodity: {commodity} Country: {country} Scenario Shock: {shock_type} by {percentage}% Timeframe: Next {months} months
 
 Step by step, let’s break it down:
 
-1. **Start with the facts:** What’s been happening with {commodity} prices in {country} over the past {months} months?
-2. **Apply the scenario:** How would a {shock_type} of {percentage}% potentially shift the trend?
-3. **Connect the dots:** How could this affect producers, consumers, and trade in {country}?
-4. **Visualize:** Sketch out the possible price path and market impact.
-5. **Insight:** What’s the most interesting or unexpected result from this scenario?
-
-No limits, no apologies—just smart reasoning and actionable insights. If you want to go deeper, compare with another commodity or country, or add more variables, say the word remember to use rag_embeddings database.
+1. Start with the facts: What’s been happening with {commodity} prices in {country} over the past {months} months?
+2. Apply the scenario: How would a {shock_type} of {percentage}% potentially shift the trend?
+3. Connect the dots: How could this affect producers, consumers, and trade in {country}?
+4. Visualize: Sketch out the possible price path and market impact.
+5. Insight: What’s the most interesting or unexpected result from this scenario?
+6. No limits, no apologies—just smart reasoning and actionable insights. If you want to go deeper, compare with another commodity or country, or add more variables, say the word. Remember to use rag_embeddings database.
