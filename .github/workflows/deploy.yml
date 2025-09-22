@@ -1,0 +1,56 @@
+name: Deploy ADK Zeno Agent to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy ADK Agent with UI
+    runs-on: ubuntu-latest
+
+    env:
+      GOOGLE_GENAI_USE_VERTEXAI: ${{ secrets.GOOGLE_GENAI_USE_VERTEXAI }}
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install -r multi_tool_agent/requirements.txt
+        pip install google-generativeai
+
+    - name: Create .env file
+      working-directory: ./multi_tool_agent
+      run: |
+        echo "GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI}" >> .env
+        echo "GOOGLE_API_KEY=${GOOGLE_API_KEY}" >> .env
+        echo "DATABASE_URL=${DATABASE_URL}" >> .env
+
+    - name: Deploy to Cloud Run (ADK UI included)
+      run: |
+        ADK_URL=$(adk deploy cloud_run \
+          --project=${{ secrets.GCP_PROJECT_ID }} \
+          --service_name=multi-tool-agent \
+          --app_name=multi-tool-agent \
+          --region=europe-west1 \
+          ./multi_tool_agent)
+        echo "ADK UI available at: $ADK_URL"
+        
