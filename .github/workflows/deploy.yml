@@ -53,4 +53,3 @@ jobs:
           --region=europe-west1 \
           ./multi_tool_agent)
         echo "ADK UI available at: $ADK_URL"
-        
