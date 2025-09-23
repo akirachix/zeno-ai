@@ -34,7 +34,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install -r multi_tool_agent/requirements.txt
+        pip install -r .requirements.txt
         pip install google-generativeai
 
     - name: Create .env file
