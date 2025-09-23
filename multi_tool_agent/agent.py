@@ -5,13 +5,12 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from google.adk.agents import Agent as ADKAgent
 from google.adk.tools.agent_tool import AgentTool
-
-from tools.db import get_trade_data, semantic_search_rag_embeddings
-from tools.graphing import plot_price_scenario
-from scenario import ScenarioSubAgent
-from comparative import comparative_agent
-from forecasting import ForecastingAgent
-from rag_tools import ask_knowledgebase
+from .tools.db import get_trade_data, semantic_search_rag_embeddings
+from .tools.graphing import plot_price_scenario
+from .scenario import ScenarioSubAgent
+from .comparative import comparative_agent
+from .forecasting import ForecastingAgent
+from .rag_tools import ask_knowledgebase
 
 SUPPORTED_COUNTRIES = {"kenya", "rwanda", "tanzania", "uganda", "ethiopia"}
 SUPPORTED_COMMODITIES = {"maize", "coffee", "tea"}
@@ -202,6 +201,7 @@ def forecast_trade(
         return {"error": f"Forecasting failed: {str(e)}"}
 
 comparative_tool = AgentTool(comparative_agent)
+comparative_agent_instance = comparative_agent
 scenario_agent_tool = scenario_tool
 forecasting_tool = forecast_trade
 rag_tool = ask_knowledgebase 

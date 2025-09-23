@@ -7,15 +7,15 @@ import numpy as np
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from sklearn.metrics import mean_absolute_error, mean_squared_error
-from db_utils import (
+from .db_utils import (
     get_country_id_by_name,
     get_crop_id_by_name,
     get_indicator_id_by_metric,
     get_trade_data_from_db,
     query_rag_embeddings_semantic
 )
-from embedding_utils import encode_query_to_vector
-from log_utils import log_step
+from .embedding_utils import encode_query_to_vector
+from .log_utils import log_step
 from prophet import Prophet
 from statsmodels.tsa.arima.model import ARIMA
 from xgboost import XGBRegressor

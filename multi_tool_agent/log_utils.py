@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 from typing import Optional, Any
 from tenacity import retry, stop_after_attempt, wait_exponential
-from db_utils import get_db_connection, release_db_connection
+from .db_utils import get_db_connection, release_db_connection
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
 def log_run(conversation_id: int, user_input: str, final_output: str, status: str) -> Optional[int]:
