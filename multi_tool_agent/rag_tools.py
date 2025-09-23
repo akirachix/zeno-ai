@@ -1,5 +1,5 @@
-from .db_utils import query_rag_embeddings_semantic
-from .embedding_utils import encode_query_to_vector
+from db_utils import query_rag_embeddings_semantic
+from embedding_utils import encode_query_to_vector
 from typing import List, Dict
 
 def ask_knowledgebase(query: str) -> List[Dict[str, str]]:
