@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from .agent import scenario_tool, forecast_trade, rag_tool, comparative_agent_instance
+from agent import scenario_tool, forecast_trade, rag_tool, comparative_agent_instance
 import os
 import shutil
 
