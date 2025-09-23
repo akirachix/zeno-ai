@@ -37,8 +37,11 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install -r requirements.txt
+        pip install --no-cache-dir -r requirements.txt
         pip install google-generativeai
+
+    - name: Install google-adk explicitly
+      run: pip install google-adk
 
     - name: Create .env file
       working-directory: ./multi_tool_agent
