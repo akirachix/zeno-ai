@@ -3,7 +3,7 @@ from google.adk.tools.agent_tool import AgentTool
 import os
 from dotenv import load_dotenv
 import google.generativeai as genai
-from .tools.db import query_embeddings
+from tools.db import query_embeddings
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
