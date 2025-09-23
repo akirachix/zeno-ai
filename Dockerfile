@@ -2,6 +2,7 @@ FROM python:3.11
 WORKDIR /app
 
 COPY . /app
+COPY multi_tool_agent /app/agents/multi_tool_agent
 
 RUN pip install --no-cache-dir -r requirements.txt
 
