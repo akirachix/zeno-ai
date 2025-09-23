@@ -54,6 +54,12 @@ jobs:
           --service_name=multi-tool-agent \
           --app_name=multi-tool-agent \
           --region=europe-west1 \
-          --allow-unauthenticated \
           ./multi_tool_agent)
         echo "ADK UI available at: $ADK_URL"
+
+    - name: Allow unauthenticated access to Cloud Run
+      run: |
+        gcloud run services add-iam-policy-binding multi-tool-agent \
+          --region europe-west1 \
+          --member="allUsers" \
+          --role="roles/run.invoker"
