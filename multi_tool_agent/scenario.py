@@ -1,7 +1,7 @@
 import os
 import re
-from .tools.db import get_trade_data, semantic_search_rag_embeddings
-from .tools.graphing import plot_price_scenario
+from tools.db import get_trade_data, semantic_search_rag_embeddings
+from tools.graphing import plot_price_scenario
 from dotenv import load_dotenv
 
 load_dotenv()
