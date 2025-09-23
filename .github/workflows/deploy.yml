@@ -32,6 +32,9 @@ jobs:
       with:
         python-version: '3.11'
 
+    - name: Install ADK CLI
+      run: pip install google-adk
+
     - name: Install dependencies
       run: |
         pip install -r requirements.txt
