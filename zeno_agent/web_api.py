@@ -11,7 +11,7 @@ os.makedirs(STATIC_DIR, exist_ok=True)
 
 @app.get("/")
 def health_check():
-    return {"status": "ok", "message": "Multi Tool Agent is running."}
+    return {"status": "ok", "message": "Zeno Agent is running."}
 
 @app.post("/scenario")
 async def scenario(query: str = Form(...)):

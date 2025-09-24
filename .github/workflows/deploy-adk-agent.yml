@@ -46,7 +46,7 @@ jobs:
       run: |
         adk deploy cloud_run \
           --project=${{ secrets.GCP_PROJECT_ID }} \
-          --service_name=multi-tool-agent \
-          --app_name=multi-tool-agent \
+          --service_name=zeno-agent \
+          --app_name=zeno-agent \
           --region=europe-west1 \
-          ./multi_tool_agent
+          ./zeno_agent
