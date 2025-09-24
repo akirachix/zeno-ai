@@ -49,5 +49,12 @@ jobs:
           --service_name=zeno-agent \
           --app_name=zeno-agent \
           --region=europe-west1 \
-          --allow-unauthenticated \
           ./zeno_agent
+
+    - name: Allow unauthenticated access to Cloud Run
+      run: |
+        gcloud run services add-iam-policy-binding zeno-agent \
+          --region=europe-west1 \
+          --project=${{ secrets.GCP_PROJECT_ID }} \
+          --member="allUsers" \
+          --role="roles/run.invoker"
