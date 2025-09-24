@@ -1,9 +1,10 @@
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from .agent import scenario_tool, forecast_trade, rag_tool, comparative_tool, root_agent
+from .agent import scenario_tool, forecast_trade, rag_tool, comparative_tool
 import os
 import shutil
+
 app = FastAPI()
 
 STATIC_DIR = "static"
@@ -17,7 +18,6 @@ def health_check():
 async def scenario(query: str = Form(...)):
     result = scenario_tool(query)
     graph_url = None
-
     graph_path = result.get("graph_path")
     if graph_path and os.path.exists(graph_path):
         filename = os.path.basename(graph_path)
@@ -25,7 +25,6 @@ async def scenario(query: str = Form(...)):
         if os.path.abspath(graph_path) != os.path.abspath(static_path):
             shutil.copyfile(graph_path, static_path)
         graph_url = f"/static/{filename}"
-
     return JSONResponse({
         "response": result.get("response", ""),
         "graph_url": graph_url,
@@ -47,7 +46,7 @@ async def forecast(
 @app.post("/comparative")
 async def comparative(query: str = Form(...)):
     try:
-        result = comparative_tool.run(query)
+        result = comparative_tool(query)
         return JSONResponse({"result": result})
     except Exception as e:
         return JSONResponse({"error": f"Comparative analysis failed: {str(e)}"}, status_code=500)
@@ -73,7 +72,7 @@ async def run(request: Request):
                 model_type=data.get("model_type")
             )
         elif endpoint_type == "comparative":
-            result = comparative_tool.run(data.get("query", ""))
+            result = comparative_tool(data.get("query", ""))
             result = {"result": result}
         elif endpoint_type == "rag":
             result = rag_tool(data.get("query", ""))
