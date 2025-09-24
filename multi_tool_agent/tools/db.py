@@ -3,16 +3,10 @@ from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 import traceback
-
 import numpy as np
-
 import google.generativeai as genai
-
-# DB connectors
 import psycopg2
 from sqlalchemy import create_engine, text
-
-# Environment Setup
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -27,11 +21,8 @@ if not GOOGLE_API_KEY:
         "GOOGLE_API_KEY is not set! Please ensure .env exists in your project root and contains a valid GOOGLE_API_KEY line."
     )
 
-# SQLAlchemy engine for modern DB queries
 engine = create_engine(DATABASE_URL)
 genai.configure(api_key=GOOGLE_API_KEY)
-
-# Gemini Embedding Functions 
 
 def get_text_embedding(text: str) -> Optional[List[float]]:
     """
@@ -66,8 +57,6 @@ def embed_text(text: str) -> Optional[List[float]]:
         traceback.print_exc()
         return None
 
-# Trade Data Queries 
-
 def get_trade_data(commodity: str, country: str, last_n_months: int = 6, return_raw: bool = False) -> Dict[str, Any]:
     """
     Return historical trade data for a commodity/country for the last N months.
@@ -95,7 +84,6 @@ def get_trade_data(commodity: str, country: str, last_n_months: int = 6, return_
             months = [f"{row.month}/{row.year}" for row in rows]
             prices = [float(row.price) for row in rows]
 
-            # Metadata
             try:
                 meta_result = conn.execute(
                     text("""
@@ -154,8 +142,6 @@ def get_trade_data_by_year(commodity: str, country: str, start_year: int, end_ye
     except Exception as e:
         print(f"DB error in get_trade_data_by_year: {e}")
         return {"months": [], "prices": []}
-
-#  RAG Embedding Search
 
 def semantic_search_rag_embeddings(user_query: str, top_k: int = 5) -> List[Dict[str, Any]]:
     """
