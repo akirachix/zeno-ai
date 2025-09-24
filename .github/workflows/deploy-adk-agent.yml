@@ -1,4 +1,4 @@
-name: Deploy ADK Agent to Cloud Run & Build Docker Image
+name: Deploy Zeno Agent to Cloud Run
 
 on:
   push:
@@ -7,13 +7,17 @@ on:
 
 jobs:
   build-and-deploy:
-    name: Build Docker Image & Deploy ADK Agent
+    name: Build Docker Image & Deploy to Cloud Run
     runs-on: ubuntu-latest
 
     env:
       GOOGLE_GENAI_USE_VERTEXAI: ${{ secrets.GOOGLE_GENAI_USE_VERTEXAI }}
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      SERVICE_NAME: zeno-agent
+      REGION: europe-west1
+      IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/zeno-economist
 
     steps:
     - name: Checkout repository
@@ -28,12 +32,12 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    - name: Build and push zeno-economist Docker image
+    - name: Build and push Docker image
       uses: docker/build-push-action@v5
       with:
         context: .
         push: true
-        tags: ${{ secrets.DOCKERHUB_USERNAME }}/zeno-economist:latest
+        tags: ${{ env.IMAGE }}:latest
 
     - name: Authenticate to Google Cloud
       uses: google-github-actions/auth@v2
@@ -43,34 +47,25 @@ jobs:
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Install ADK
-      run: pip install google-adk
-
-    - name: Create .env file from secrets
+    - name: Create .env file from secrets (optional for build, but kept for consistency)
       run: |
         echo "GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI}" >> .env
         echo "GOOGLE_API_KEY=${GOOGLE_API_KEY}" >> .env
         echo "DATABASE_URL=${DATABASE_URL}" >> .env
 
-    - name: Deploy to Cloud Run
-      working-directory: .
+    - name: Deploy to Cloud Run from Docker image
       run: |
-        adk deploy cloud_run \
-          --project=${{ secrets.GCP_PROJECT_ID }} \
-          --service_name=zeno-agent \
-          --app_name=zeno-agent \
-          --region=europe-west1 \
-          ./zeno_agent
+        gcloud run deploy ${{ env.SERVICE_NAME }} \
+          --image=${{ env.IMAGE }}:latest \
+          --platform=managed \
+          --region=${{ env.REGION }} \
+          --project=${{ env.PROJECT_ID }} \
+          --allow-unauthenticated \
+          --port=8000 \
+          --set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI},GOOGLE_API_KEY=${GOOGLE_API_KEY},DATABASE_URL=${DATABASE_URL}
 
-    - name: Allow unauthenticated access to Cloud Run
+    - name: Output Cloud Run URL
       run: |
-        gcloud run services add-iam-policy-binding zeno-agent \
-          --region=europe-west1 \
-          --project=${{ secrets.GCP_PROJECT_ID }} \
-          --member="allUsers" \
-          --role="roles/run.invoker"
+        URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --format='value(status.url)')
+        echo "Deployed to: $URL"
+        echo "CLOUD_RUN_URL=$URL" >> $GITHUB_ENV
