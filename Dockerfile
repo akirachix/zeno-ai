@@ -3,7 +3,7 @@ WORKDIR /app
 
 COPY . /app
 
-RUN pip install --no-cache-dir -r multi_tool_agent/requirements.txt
+RUN pip install --no-cache-dir -r zeno_agent/requirements.txt
 
 EXPOSE 8000
 
