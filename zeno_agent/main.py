@@ -3,7 +3,7 @@ from .web_api import app as custom_app
 
 def create_app() -> FastAPI:
     app = FastAPI()
-    app.mount("/api", custom_app)
+    app.mount("/", custom_app)
     print("✅ Mounted at /api")
     return app
 
