@@ -1,4 +1,0 @@
-name: "multi_tool_agent"
-description: "Demo agent for multi-tool"
-tools: []
-# Add more config here if required by your agent framework
