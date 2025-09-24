@@ -5,13 +5,13 @@ from .web_api import app as custom_app
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Zeno Agent API",
-        description="...",
+        description="Zeno economist AI",
         version="1.0.0"
     )
     
     @app.get("/")
     def root():
-        return {"status": "ok"}
+        return {"status": "ok, Zeno Agent is running."}
 
     app.mount("/api", custom_app)
     return app
