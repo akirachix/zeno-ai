@@ -6,6 +6,6 @@ COPY . /app
 
 RUN pip install --no-cache-dir -r zeno_agent/requirements.txt
 
-EXPOSE 8080
+EXPOSE 8000
 
 CMD ["adk", "web"]
