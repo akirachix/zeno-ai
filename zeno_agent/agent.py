@@ -3,14 +3,16 @@ import re
 from dotenv import load_dotenv
 from datetime import datetime
 from typing import Optional, Dict, Any
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from google.adk.agents import Agent as ADKAgent
 from google.adk.tools.agent_tool import AgentTool
-from .tools.db import get_trade_data, semantic_search_rag_embeddings
-from .tools.graphing import plot_price_scenario
-from .scenario import ScenarioSubAgent
-from .comparative import comparative_agent
-from .forecasting import ForecastingAgent
-from .rag_tools import ask_knowledgebase
+from tools.db import get_trade_data, semantic_search_rag_embeddings
+from tools.graphing import plot_price_scenario
+from scenario import ScenarioSubAgent
+from comparative import comparative_agent
+from forecasting import ForecastingAgent
+from rag_tools import ask_knowledgebase
 
 SUPPORTED_COUNTRIES = {"kenya", "rwanda", "tanzania", "uganda", "ethiopia"}
 SUPPORTED_COMMODITIES = {"maize", "coffee", "tea"}
@@ -210,6 +212,23 @@ root_agent = ADKAgent(
     ],
 )
 
+app = FastAPI()
+
+@app.post("/query")
+async def query(request: Request):
+    data = await request.json()
+    user_input = data.get("query", "")
+    try:
+        response = root_agent.run(user_input, tool_call_config={"allowed_tools": "any"})
+        final_response = getattr(response, "text", response)
+        return JSONResponse({"response": final_response})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/healthz")
+def health():
+    return {"status": "ok"}
+
 def main():
     if not os.getenv("GOOGLE_API_KEY"):
         print("CRITICAL ERROR: GOOGLE_API_KEY environment variable is not set.")
@@ -228,4 +247,9 @@ def main():
             print(f"ERROR: {e}")
 
 if __name__ == "__main__":
-    main()
+    if os.environ.get("CLI_MODE", "0") == "1":
+        main()
+    else:
+        import uvicorn
+        port = int(os.environ.get("PORT", 8080))
+        uvicorn.run("agent:app", host="0.0.0.0", port=port)
