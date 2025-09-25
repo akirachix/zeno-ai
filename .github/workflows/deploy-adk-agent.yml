@@ -61,7 +61,6 @@ jobs:
           --region=${{ env.REGION }} \
           --project=${{ env.PROJECT_ID }} \
           --allow-unauthenticated \
-          --port=8080 \
           --set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI},GOOGLE_API_KEY=${GOOGLE_API_KEY},DATABASE_URL=${DATABASE_URL}
 
     - name: Output Cloud Run URL
