@@ -1,11 +1,16 @@
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from .agent import scenario_tool, forecast_trade, rag_tool, comparative_tool
+from .agent import scenario_tool, forecast_trade, rag_tool, comparative_agent_raw
 import os
 import shutil
 
-app = FastAPI()
+app = FastAPI(
+    title="Zeno Agent API",
+    version="1.0.0",
+    openapi_url="/openapi.json",
+    docs_url="/docs"
+)
 
 STATIC_DIR = "static"
 os.makedirs(STATIC_DIR, exist_ok=True)
@@ -46,8 +51,9 @@ async def forecast(
 @app.post("/comparative")
 async def comparative(query: str = Form(...)):
     try:
-        result = comparative_tool(query)
-        return JSONResponse({"result": result})
+        response = comparative_agent_raw.run(query)
+        result_text = getattr(response, "text", str(response))
+        return JSONResponse({"result": result_text})
     except Exception as e:
         return JSONResponse({"error": f"Comparative analysis failed: {str(e)}"}, status_code=500)
 
@@ -72,8 +78,9 @@ async def run(request: Request):
                 model_type=data.get("model_type")
             )
         elif endpoint_type == "comparative":
-            result = comparative_tool(data.get("query", ""))
-            result = {"result": result}
+            response = comparative_agent_raw.run(data.get("query", ""))
+            result_text = getattr(response, "text", str(response))
+            result = {"result": result_text}
         elif endpoint_type == "rag":
             result = rag_tool(data.get("query", ""))
         else:
