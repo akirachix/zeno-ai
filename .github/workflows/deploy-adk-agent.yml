@@ -47,13 +47,13 @@ jobs:
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
 
-    - name: Create .env file from secrets (optional for build, but kept for consistency)
+    - name: Create .env file from secrets
       run: |
         echo "GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI}" >> .env
         echo "GOOGLE_API_KEY=${GOOGLE_API_KEY}" >> .env
         echo "DATABASE_URL=${DATABASE_URL}" >> .env
 
-    - name: Deploy to Cloud Run from Docker image
+    - name: Deploy to Cloud Run
       run: |
         gcloud run deploy ${{ env.SERVICE_NAME }} \
           --image=${{ env.IMAGE }}:latest \
@@ -61,7 +61,7 @@ jobs:
           --region=${{ env.REGION }} \
           --project=${{ env.PROJECT_ID }} \
           --allow-unauthenticated \
-          --port=8000 \
+          --port=8080 \
           --set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI},GOOGLE_API_KEY=${GOOGLE_API_KEY},DATABASE_URL=${DATABASE_URL}
 
     - name: Output Cloud Run URL
