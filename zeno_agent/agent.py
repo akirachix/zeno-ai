@@ -192,6 +192,7 @@ def forecast_trade(
         return {"error": f"Forecasting failed: {str(e)}"}
 
 comparative_tool = AgentTool(comparative_agent)
+comparative_agent_raw = comparative_agent
 scenario_agent_tool = scenario_tool
 forecasting_tool = forecast_trade
 rag_tool = ask_knowledgebase
