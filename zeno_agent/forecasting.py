@@ -20,17 +20,18 @@ from prophet import Prophet
 from statsmodels.tsa.arima.model import ARIMA
 from xgboost import XGBRegressor
 
+# ✅ Configure GenAI ONCE at module level (required for gemini-1.5-flash in v1)
+api_key = os.getenv("GOOGLE_API_KEY")
+if not api_key:
+    raise EnvironmentError("GOOGLE_API_KEY environment variable is not set.")
+genai.configure(api_key=api_key)
+
 class ForecastingAgent:
     def __init__(self):
         self.supported_commodities = ["maize", "coffee_arabica", "coffee_robusta", "tea"]
         self.supported_metrics = ["export_volume", "price", "revenue"]
         self.supported_countries = ["kenya", "ethiopia", "rwanda"]
         self.supported_models = ["ARIMA", "Prophet", "XGBoost", "Ensemble"]
-        
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            raise EnvironmentError("GOOGLE_API_KEY environment variable is not set.")
-        genai.configure(api_key=api_key)
 
     def validate_params(self, params: Dict[str, Any]) -> List[str]:
         """Validate input parameters against supported values."""
@@ -290,12 +291,27 @@ Instructions:
 Example:
 Assumed Arabica coffee for Kenya as it is the dominant type per KNBS reports. The forecast reflects rising global demand and improved post-harvest infrastructure, consistent with KNBS 2023 findings. Prophet was chosen due to detected seasonality in the data.
 """
-            model = genai.GenerativeModel("gemini-1.5-pro")
+
             try:
-                response = model.generate_content(prompt)
+                model = genai.GenerativeModel("models/gemini-1.5-flash")
+                response = model.generate_content(
+                    prompt,
+                    generation_config=genai.GenerationConfig(
+                        max_output_tokens=1000,
+                        temperature=0.3,
+                        top_p=0.95,
+                    )
+                )
                 reasoning = response.text.strip()
             except Exception as e:
-                reasoning = f"LLM failed to generate explanation: {str(e)}"
+                print(f"Warning: Gemini 1.5 Flash failed: {e}")
+                # Fallback to gemini-pro
+                try:
+                    model = genai.GenerativeModel("models/gemini-pro")
+                    response = model.generate_content(prompt)
+                    reasoning = response.text.strip() + " [Generated using fallback model: gemini-pro]"
+                except Exception as e2:
+                    reasoning = f"LLM explanation failed (gemini-1.5-flash and gemini-pro): {str(e2)}"
             
             result = {
                 "forecast_value": forecast_value,
