@@ -20,7 +20,6 @@ from prophet import Prophet
 from statsmodels.tsa.arima.model import ARIMA
 from xgboost import XGBRegressor
 
-# ✅ Configure GenAI ONCE at module level (required for gemini-1.5-flash in v1)
 api_key = os.getenv("GOOGLE_API_KEY")
 if not api_key:
     raise EnvironmentError("GOOGLE_API_KEY environment variable is not set.")
