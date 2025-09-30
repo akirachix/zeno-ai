@@ -25,6 +25,7 @@ if not api_key:
     raise EnvironmentError("GOOGLE_API_KEY environment variable is not set.")
 genai.configure(api_key=api_key)
 
+
 class ForecastingAgent:
     def __init__(self):
         self.supported_commodities = ["maize", "coffee_arabica", "coffee_robusta", "tea"]
