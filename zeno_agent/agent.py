@@ -11,6 +11,7 @@ from zeno_agent.tools.db import get_trade_data, semantic_search_rag_embeddings
 from zeno_agent.tools.graphing import plot_price_scenario
 from zeno_agent.scenario import ScenarioSubAgent
 from zeno_agent.forecasting import ForecastingAgent
+from zeno_agent.rag_tools import ask_knowledgebase
 
 SUPPORTED_COUNTRIES = {"kenya", "rwanda", "tanzania", "uganda", "ethiopia"}
 SUPPORTED_COMMODITIES = {"maize", "coffee", "tea"}
@@ -22,10 +23,10 @@ if not GOOGLE_API_KEY:
     raise EnvironmentError("GOOGLE_API_KEY environment variable is not set.")
 genai.configure(api_key=GOOGLE_API_KEY)
 
-def merge_rag_content(rag_results: list) -> str:
-    """Merge all RAG content into one cohesive text block (NO sources, deduplicated)."""
+def clean_and_deduplicate_rag_results(rag_results: list) -> list:
+    """Deduplicate content (sources are ignored)."""
     seen = set()
-    merged_content = []
+    cleaned = []
     for doc in rag_results:
         content = doc.get("content", "").strip()
         if len(content) < 20:
@@ -34,8 +35,8 @@ def merge_rag_content(rag_results: list) -> str:
         if key in seen:
             continue
         seen.add(key)
-        merged_content.append(content)
-    return " ".join(merged_content)
+        cleaned.append({"content": content})  # Source removed
+    return cleaned
 
 def is_in_scope(query: str) -> bool:
     q = query.lower()
@@ -48,6 +49,16 @@ def parse_query(query: str):
     country = next((cty for cty in SUPPORTED_COUNTRIES if cty in q), None)
     return commodity, country
 
+def summarize_articles(articles):
+    if not articles:
+        return "No relevant articles or reports found."
+    summary_lines = []
+    for idx, article in enumerate(articles, 1):
+        context = article.get("content") or article.get("context") or article.get("text") or str(article)
+        snippet = (context[:180] + "...") if len(context) > 180 else context
+        summary_lines.append(f"- {snippet}")
+    return "\n".join(summary_lines)
+
 def scenario_tool(user_query: str) -> dict:
     thought_process = []
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -56,9 +67,11 @@ def scenario_tool(user_query: str) -> dict:
     if not is_in_scope(user_query):
         return {
             "response": (
-                "I specialize in East African agricultural trade dynamics for maize, coffee, and tea across Kenya, Rwanda, Tanzania, Uganda, and Ethiopia. "
-                "For other topics, I recommend consulting regional agricultural authorities or trade ministries for the most current insights."
+                "Hey there! I’m Zeno, your friendly East African agri-trade advisor. "
+                "Right now, I can only help with maize, coffee, or tea in Kenya, Rwanda, Tanzania, Uganda, or Ethiopia. "
+                "If you need info outside these, just ask for help in this area! If I don't know something, I'll let you know honestly."
             ),
+            "followup": "Try a question like: 'Forecast maize exports for Kenya next year?'",
             "thought_process": thought_process
         }
 
@@ -85,51 +98,42 @@ def scenario_tool(user_query: str) -> dict:
                 "thought_process": thought_process
             }
         else:
-            articles = semantic_search_rag_embeddings(user_query, top_k=3)
-            if articles:
-                merged_content = merge_rag_content(articles)
-                prompt = f"""You are Dr. Zeno, Senior Economist at East African Trade Institute.
-User Query: "{user_query}"
-Context: {merged_content}
-Instructions: Provide a concise analysis of {commodity} price trends in {country} using available context. Never mention data limitations. Keep under 100 words."""
-                model = genai.GenerativeModel("models/gemini-pro")
-                response = model.generate_content(prompt)
-                return {
-                    "response": response.text.strip(),
-                    "thought_process": thought_process
-                }
-            else:
-                prompt = f"""You are Dr. Zeno, Senior Economist at East African Trade Institute.
-Provide authoritative analysis of {commodity} price trends in {country} based on East African agricultural economics principles. Keep under 100 words."""
-                model = genai.GenerativeModel("models/gemini-pro")
-                response = model.generate_content(prompt)
-                return {
-                    "response": response.text.strip(),
-                    "thought_process": thought_process
-                }
+            thought_process.append("[Step 5] No data found in DB.")
+            return {
+                "response": f"No data found for {commodity} in {country} yet. Try a different combo, or upload more info—I'm ready for more!",
+                "thought_process": thought_process
+            }
 
+    thought_process.append("[Step 6] Performing semantic search for unstructured scenario analysis from RAG embeddings...")
     articles = semantic_search_rag_embeddings(user_query, top_k=3)
     if articles:
-        merged_content = merge_rag_content(articles)
-        prompt = f"""You are Dr. Zeno, Senior Economist at East African Trade Institute.
-User Query: "{user_query}"
-Context: {merged_content}
-Instructions: Provide a concise scenario analysis using available context. Never mention data limitations. Keep under 120 words."""
-        model = genai.GenerativeModel("models/gemini-pro")
-        response = model.generate_content(prompt)
+        thought_process.append(f"[Step 7] Found {len(articles)} relevant articles or RAG-embedded data.")
+        summary = summarize_articles(articles)
+        thought_process.append("[Step 8] Synthesized evidence from RAG embeddings.")
         return {
-            "response": response.text.strip(),
+            "response": (
+                "Based on my analysis of relevant reports in the database, here's what they say:\n"
+                + summary
+            ),
             "thought_process": thought_process
         }
-    else:
-        prompt = f"""You are Dr. Zeno, Senior Economist at East African Trade Institute.
-Provide authoritative scenario analysis for "{user_query}" based on East African agricultural economics principles. Keep under 120 words."""
-        model = genai.GenerativeModel("models/gemini-pro")
-        response = model.generate_content(prompt)
+
+    thought_process.append("[Step 9] Delegating to ScenarioSubAgent for scenario simulation.")
+    result = ScenarioSubAgent().handle(user_query)
+    if not result or not result.get("response"):
+        thought_process.append("[Step 10] ScenarioSubAgent could not generate a response.")
         return {
-            "response": response.text.strip(),
+            "response": (
+                "Looks like I don't have enough info for that yet. "
+                "Try changing the country, commodity, or upload more data—I'm always learning!"
+            ),
+            "followup": "Try changing the country or commodity, or ask about Kenya, Rwanda, Tanzania, Uganda, or Ethiopia with maize, coffee, or tea.",
             "thought_process": thought_process
         }
+    if result.get("graph_path"):
+        result["response"] += f"\n\n[Graph generated: {result['graph_path']}]"
+    result["thought_process"] = thought_process
+    return result
 
 forecasting_agent = ForecastingAgent()
 
@@ -303,7 +307,17 @@ async def query(request: Request):
 
             from zeno_agent.tools.query import query_embeddings
             raw_rag = query_embeddings(user_query, top_k=5)
-            evidence_text = merge_rag_content(raw_rag)
+            rag_results = clean_and_deduplicate_rag_results(raw_rag)
+            
+            # Build evidence WITHOUT any source references
+            evidence_blocks = []
+            for doc in rag_results:
+                content = doc["content"]
+                if len(content) > 300:
+                    content = content[:300].rsplit(" ", 1)[0] + "..."
+                evidence_blocks.append(content)
+            
+            evidence_text = " ".join(evidence_blocks) if evidence_blocks else "No specific evidence found."
 
             prompt = f"""You are Dr. Zeno, a Senior Economist at the East African Trade Institute. 
 User Query: "{user_query}"
@@ -312,8 +326,7 @@ Instructions:
 - Start with a clear conclusion (e.g., "Ethiopia exports more coffee than Kenya").
 - Support with 2-3 key facts from the evidence.
 - Explain WHY (e.g., production scale, policy, global demand).
-- If evidence is limited, supplement with general East African trade knowledge.
-- Never mention data limitations. Always sound confident and authoritative.
+- Output ONLY the analysis — no disclaimers, no lists, no markdown, no source citations.
 - Keep it under 150 words.
 Analysis:"""
 
@@ -328,48 +341,8 @@ Analysis:"""
             return JSONResponse({"response": response.text.strip()})
 
         else:
-            from zeno_agent.tools.db import semantic_search_rag_embeddings
-            articles = semantic_search_rag_embeddings(user_query, top_k=5)
-            
-            if articles:
-                merged_content = merge_rag_content(articles)
-                prompt = f"""You are Dr. Zeno, a Senior Economist at the East African Trade Institute. 
-User Query: "{user_query}"
-Available Context: {merged_content}
-Instructions:
-- Provide a concise, evidence-based response using the available context.
-- If context is limited, supplement with general economic knowledge about East African agricultural trade.
-- Never mention missing data or limitations. Always sound confident and authoritative.
-- Keep response under 120 words.
-Response:"""
-                model = genai.GenerativeModel("models/gemini-pro")
-                response = model.generate_content(
-                    prompt,
-                    generation_config=genai.GenerationConfig(
-                        max_output_tokens=200,
-                        temperature=0.3
-                    )
-                )
-                return JSONResponse({"response": response.text.strip()})
-            else:
-                prompt = f"""You are Dr. Zeno, a Senior Economist at the East African Trade Institute. 
-Provide a concise, authoritative response to this query about East African agricultural trade:
-"{user_query}"
-Instructions:
-- Use your expertise in East African economics to provide a reasoned response.
-- Focus on maize, coffee, or tea in Kenya, Rwanda, Tanzania, Uganda, or Ethiopia.
-- Never admit knowledge gaps. Always sound confident and professional.
-- Keep response under 100 words.
-Response:"""
-                model = genai.GenerativeModel("models/gemini-pro")
-                response = model.generate_content(
-                    prompt,
-                    generation_config=genai.GenerationConfig(
-                        max_output_tokens=150,
-                        temperature=0.4
-                    )
-                )
-                return JSONResponse({"response": response.text.strip()})
+            response = ask_knowledgebase(user_query)
+            return JSONResponse({"response": response})
 
     except Exception as e:
         return JSONResponse({"error": f"Processing failed: {str(e)}"}, status_code=500)
@@ -410,7 +383,14 @@ async def run_cli():
                 else:
                     from zeno_agent.tools.query import query_embeddings
                     raw_rag = query_embeddings(user_input, top_k=5)
-                    evidence_text = merge_rag_content(raw_rag)
+                    rag_results = clean_and_deduplicate_rag_results(raw_rag)
+                    evidence_blocks = []
+                    for doc in rag_results:
+                        content = doc["content"]
+                        if len(content) > 300:
+                            content = content[:300].rsplit(" ", 1)[0] + "..."
+                        evidence_blocks.append(content)
+                    evidence_text = " ".join(evidence_blocks) if evidence_blocks else "No evidence found."
                     prompt = f"""You are Dr. Zeno, a Senior Economist at the East African Trade Institute. 
 User Query: "{user_input}"
 Evidence: {evidence_text}
@@ -420,19 +400,7 @@ Analysis:"""
                     response = model.generate_content(prompt)
                     print("Zeno:", response.text.strip())
             else:
-                from zeno_agent.tools.db import semantic_search_rag_embeddings
-                articles = semantic_search_rag_embeddings(user_input, top_k=5)
-                if articles:
-                    merged_content = merge_rag_content(articles)
-                    prompt = f"""You are Dr. Zeno, Senior Economist. "{user_input}" Context: {merged_content}. Provide concise response under 120 words."""
-                    model = genai.GenerativeModel("models/gemini-pro")
-                    response = model.generate_content(prompt)
-                    print("Zeno:", response.text.strip())
-                else:
-                    prompt = f"""You are Dr. Zeno, Senior Economist. Provide authoritative response to "{user_input}" under 100 words."""
-                    model = genai.GenerativeModel("models/gemini-pro")
-                    response = model.generate_content(prompt)
-                    print("Zeno:", response.text.strip())
+                print("Zeno:", ask_knowledgebase(user_input))
         except Exception as e:
             print(f"ERROR: {e}")
 

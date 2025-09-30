@@ -307,7 +307,7 @@ Assumed Arabica coffee for Kenya as it is the dominant type per KNBS reports. Th
                 print(f"Warning: Gemini 1.5 Flash failed: {e}")
                 # Fallback to gemini-pro
                 try:
-                    model = genai.GenerativeModel("models/gemini-pro")
+                    model = genai.GenerativeModel("models/gemini-1.0-pro")
                     response = model.generate_content(prompt)
                     reasoning = response.text.strip() + " [Generated using fallback model: gemini-pro]"
                 except Exception as e2:

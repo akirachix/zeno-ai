@@ -60,7 +60,7 @@ Instructions:
 - Keep response under 150 words.
 Analysis:"""
 
-    model = genai.GenerativeModel("models/gemini-pro")
+    model = genai.GenerativeModel("models/gemini-1.0-pro")
     response = model.generate_content(
         prompt,
         generation_config=genai.GenerationConfig(
@@ -84,7 +84,7 @@ synthesize_analysis_tool = AgentTool(
 
 comparative_agent = Agent(
     name="comparative_analysis_agent",
-    model="gemini-pro",
+    model="gemini-1.0-pro",
     description="Specialized agent for comparative analysis.",
     instruction=(
         "You are a highly skilled Comparative Economic Analyst. "
