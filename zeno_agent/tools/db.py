@@ -4,13 +4,15 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 import traceback
 import numpy as np
-from google import genai
+import google.generativeai as genai
 import psycopg2
 from sqlalchemy import create_engine, text
 load_dotenv()
 
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
 
 if not DATABASE_URL:
     raise RuntimeError(
@@ -21,20 +23,27 @@ if not GOOGLE_API_KEY:
         "GOOGLE_API_KEY is not set! Please ensure .env exists in your project root and contains a valid GOOGLE_API_KEY line."
     )
 
+
 engine = create_engine(DATABASE_URL)
+
 
 def get_text_embedding(text: str) -> Optional[List[float]]:
     """
-    Returns a list embedding for a string using Gemini Embeddings API.
+    Returns a list embedding for a string using Gemini Embeddings API (v0.8.5 syntax).
     """
     try:
-        model = genai.GenerativeModel("models/text-embedding-004", api_key=GOOGLE_API_KEY)
-        res = model.embed_content(text)
+        genai.configure(api_key=GOOGLE_API_KEY)
+        res = genai.embed_content(
+            model="models/text-embedding-004",
+            content=text,
+            task_type="retrieval_document",
+        )
         return res["embedding"]
     except Exception as e:
         print(f"Error generating embedding: {e}")
         traceback.print_exc()
         return None
+
 
 def embed_text(text: str) -> Optional[List[float]]:
     """
@@ -42,14 +51,19 @@ def embed_text(text: str) -> Optional[List[float]]:
     Returns a list of floats (the embedding vector), or None on error.
     """
     try:
-        model = genai.GenerativeModel("models/text-embedding-004", api_key=GOOGLE_API_KEY)
-        response = model.embed_content(text)
+        genai.configure(api_key=GOOGLE_API_KEY)
+        response = genai.embed_content(
+            model="models/text-embedding-004",
+            content=text,
+            task_type="retrieval_document",
+        )
         embedding = response["embedding"]
         return embedding
     except Exception as e:
         print(f"Error generating embedding: {e}")
         traceback.print_exc()
         return None
+
 
 def get_trade_data(commodity: str, country: str, last_n_months: int = 6, return_raw: bool = False) -> Dict[str, Any]:
     """
@@ -78,6 +92,7 @@ def get_trade_data(commodity: str, country: str, last_n_months: int = 6, return_
             months = [f"{row.month}/{row.year}" for row in rows]
             prices = [float(row.price) for row in rows]
 
+
             try:
                 meta_result = conn.execute(
                     text("""
@@ -100,12 +115,14 @@ def get_trade_data(commodity: str, country: str, last_n_months: int = 6, return_
                 print(f"DB warning: metadata query failed: {meta_e}")
                 metadata = None
 
+
             if return_raw:
                 return {"months": months, "prices": prices, "rows": rows, "metadata": metadata}
             return {"months": months, "prices": prices, "metadata": metadata}
     except Exception as e:
         print(f"DB error in get_trade_data: {e}")
         return {"months": [], "prices": [], "metadata": None}
+
 
 def get_trade_data_by_year(commodity: str, country: str, start_year: int, end_year: int) -> Dict[str, Any]:
     """
@@ -136,6 +153,7 @@ def get_trade_data_by_year(commodity: str, country: str, start_year: int, end_ye
     except Exception as e:
         print(f"DB error in get_trade_data_by_year: {e}")
         return {"months": [], "prices": []}
+
 
 def semantic_search_rag_embeddings(user_query: str, top_k: int = 5) -> List[Dict[str, Any]]:
     """
@@ -168,6 +186,7 @@ def semantic_search_rag_embeddings(user_query: str, top_k: int = 5) -> List[Dict
         print(f"DB error in semantic_search_rag_embeddings: {e}")
         return []
 
+
 def query_embeddings(query: str, top_k: int = 5) -> Dict[str, Any]:
     """
     Perform a semantic similarity search on zeno.rag_embeddings table using pgvector.
@@ -181,6 +200,7 @@ def query_embeddings(query: str, top_k: int = 5) -> Dict[str, Any]:
             "error_message": "Failed to generate query embedding."
         }
 
+
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
@@ -190,6 +210,7 @@ def query_embeddings(query: str, top_k: int = 5) -> Dict[str, Any]:
             ORDER BY embedding_vector <-> %s::vector
             LIMIT %s;
         """, (query_vector, top_k))
+
 
         rows = cur.fetchall()
         results = [
@@ -201,6 +222,7 @@ def query_embeddings(query: str, top_k: int = 5) -> Dict[str, Any]:
             }
             for row in rows
         ]
+
 
         cur.close()
         conn.close()
