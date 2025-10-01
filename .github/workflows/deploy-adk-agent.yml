@@ -52,7 +52,6 @@ jobs:
         echo "GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI}" >> .env
         echo "GOOGLE_API_KEY=${GOOGLE_API_KEY}" >> .env
         echo "DATABASE_URL=${DATABASE_URL}" >> .env
-
     - name: Deploy to Cloud Run
       run: |
         gcloud run deploy ${{ env.SERVICE_NAME }} \
@@ -61,8 +60,8 @@ jobs:
           --region=${{ env.REGION }} \
           --project=${{ env.PROJECT_ID }} \
           --allow-unauthenticated \
+          --memory=1Gi \
           --set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI},GOOGLE_API_KEY=${GOOGLE_API_KEY},DATABASE_URL=${DATABASE_URL}
-
     - name: Output Cloud Run URL
       run: |
         URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --format='value(status.url)')
