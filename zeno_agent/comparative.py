@@ -2,7 +2,7 @@ from google.adk.agents import Agent
 from google.adk.tools.agent_tool import AgentTool
 import os
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
 from .tools.db import query_embeddings
 
 load_dotenv()

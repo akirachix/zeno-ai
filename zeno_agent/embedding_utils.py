@@ -1,4 +1,4 @@
-import google.generativeai as genai
+from google import genai
 import os
 from cachetools import TTLCache
 from tenacity import retry, stop_after_attempt, wait_exponential

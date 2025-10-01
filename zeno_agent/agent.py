@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-import google.generativeai as genai
+from google import genai
 from zeno_agent.tools.db import get_trade_data, semantic_search_rag_embeddings
 from zeno_agent.tools.graphing import plot_price_scenario
 from zeno_agent.scenario import ScenarioSubAgent
