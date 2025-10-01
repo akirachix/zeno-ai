@@ -1,4 +1,4 @@
-name: Deploy ADK Agent to Cloud Run
+name: Deploy Zeno Agent to Cloud Run
 
 on:
   push:
@@ -6,18 +6,38 @@ on:
       - main
 
 jobs:
-  deploy:
-    name: Deploy ADK Agent
+  build-and-deploy:
+    name: Build Docker Image & Deploy to Cloud Run
     runs-on: ubuntu-latest
 
     env:
       GOOGLE_GENAI_USE_VERTEXAI: ${{ secrets.GOOGLE_GENAI_USE_VERTEXAI }}
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      SERVICE_NAME: zeno-agent
+      REGION: europe-west1
+      IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/zeno-economist
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ env.IMAGE }}:latest
 
     - name: Authenticate to Google Cloud
       uses: google-github-actions/auth@v2
@@ -27,14 +47,6 @@ jobs:
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Install ADK
-      run: pip install google-adk
-
     - name: Create .env file from secrets
       run: |
         echo "GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI}" >> .env
@@ -42,11 +54,17 @@ jobs:
         echo "DATABASE_URL=${DATABASE_URL}" >> .env
 
     - name: Deploy to Cloud Run
-      working-directory: .
       run: |
-        adk deploy cloud_run \
-          --project=${{ secrets.GCP_PROJECT_ID }} \
-          --service_name=zeno-agent \
-          --app_name=zeno-agent \
-          --region=europe-west1 \
-          ./zeno_agent
+        gcloud run deploy ${{ env.SERVICE_NAME }} \
+          --image=${{ env.IMAGE }}:latest \
+          --platform=managed \
+          --region=${{ env.REGION }} \
+          --project=${{ env.PROJECT_ID }} \
+          --allow-unauthenticated \
+          --set-env-vars=GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI},GOOGLE_API_KEY=${GOOGLE_API_KEY},DATABASE_URL=${DATABASE_URL}
+
+    - name: Output Cloud Run URL
+      run: |
+        URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} --format='value(status.url)')
+        echo "Deployed to: $URL"
+        echo "CLOUD_RUN_URL=$URL" >> $GITHUB_ENV
