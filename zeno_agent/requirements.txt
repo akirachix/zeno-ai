@@ -2,7 +2,7 @@ annotated-types==0.7.0
 anyio==4.10.0
 attrs==25.3.0
 Authlib==1.6.4
-cachetools==5.5.2
+cachetools==6.2.0
 certifi==2025.8.3
 cffi==2.0.0
 charset-normalizer==3.4.3
@@ -18,8 +18,8 @@ fonttools==4.60.0
 google-adk==1.4.1
 google-ai-generativelanguage==0.6.15
 google-api-core==2.25.1
-google-api-python-client==2.182.0
-google-auth==2.40.3
+google-api-python-client==2.183.0
+google-auth==2.41.1
 google-auth-httplib2==0.2.0
 google-cloud-aiplatform==1.115.0
 google-cloud-appengine-logging==1.6.2
@@ -33,14 +33,14 @@ google-cloud-speech==2.33.0
 google-cloud-storage==2.19.0
 google-cloud-trace==1.16.2
 google-crc32c==1.7.1
-google-genai==1.38.0
+google-genai==1.39.1
 google-generativeai==0.8.5
 google-resumable-media==2.7.2
 googleapis-common-protos==1.70.0
 graphviz==0.21
 greenlet==3.2.4
 grpc-google-iam-v1==0.14.2
-grpcio==1.75.0
+grpcio==1.75.1
 grpcio-status==1.71.2
 h11==0.16.0
 holidays==0.81
@@ -57,6 +57,7 @@ jsonschema-specifications==2025.9.1
 kiwisolver==1.4.9
 matplotlib==3.10.6
 mcp==1.14.1
+narwhals==2.6.0
 numpy==2.3.3
 nvidia-nccl-cu12==2.28.3
 opentelemetry-api==1.37.0
@@ -68,6 +69,7 @@ packaging==25.0
 pandas==2.3.2
 patsy==1.0.1
 pillow==11.3.0
+plotly==6.3.0
 prophet==1.1.7
 proto-plus==1.26.1
 protobuf==5.29.5
@@ -79,7 +81,7 @@ pycparser==2.23
 pydantic==2.11.9
 pydantic-settings==2.10.1
 pydantic_core==2.33.2
-pyparsing==3.2.4
+pyparsing==3.2.5
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.0
 python-multipart==0.0.20
@@ -102,7 +104,7 @@ statsmodels==0.14.5
 tenacity==9.1.2
 threadpoolctl==3.6.0
 tqdm==4.67.1
-typing-inspection==0.4.1
+typing-inspection==0.4.2
 typing_extensions==4.15.0
 tzdata==2025.2
 tzlocal==5.3.1

@@ -1,28 +1,41 @@
 import os
 import re
+import json
 from dotenv import load_dotenv
 from datetime import datetime
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from google.adk.agents import Agent as ADKAgent
-from google.adk.tools.agent_tool import AgentTool
-from tools.db import get_trade_data, semantic_search_rag_embeddings
-from tools.graphing import plot_price_scenario
-from scenario import ScenarioSubAgent
-from comparative import comparative_agent
-from forecasting import ForecastingAgent
-from rag_tools import ask_knowledgebase
+from google import genai
+from zeno_agent.tools.db import get_trade_data, semantic_search_rag_embeddings
+from zeno_agent.tools.graphing import plot_price_scenario
+from zeno_agent.scenario import ScenarioSubAgent
+from zeno_agent.forecasting import ForecastingAgent
+from zeno_agent.rag_tools import ask_knowledgebase
 
 SUPPORTED_COUNTRIES = {"kenya", "rwanda", "tanzania", "uganda", "ethiopia"}
 SUPPORTED_COMMODITIES = {"maize", "coffee", "tea"}
 
 load_dotenv()
 
-def load_prompt(filename: str) -> str:
-    prompts_dir = os.path.join(os.path.dirname(__file__), "prompts")
-    with open(os.path.join(prompts_dir, filename), encoding="utf-8") as f:
-        return f.read().strip()
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+if not GOOGLE_API_KEY:
+    raise EnvironmentError("GOOGLE_API_KEY environment variable is not set.")
+genai.configure(api_key=GOOGLE_API_KEY)
+
+def clean_and_deduplicate_rag_results(rag_results: list) -> list:
+    seen = set()
+    cleaned = []
+    for doc in rag_results:
+        content = doc.get("content", "").strip()
+        if len(content) < 20:
+            continue
+        key = content[:100]
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append({"content": content})
+    return cleaned
 
 def is_in_scope(query: str) -> bool:
     q = query.lower()
@@ -42,7 +55,7 @@ def summarize_articles(articles):
     for idx, article in enumerate(articles, 1):
         context = article.get("content") or article.get("context") or article.get("text") or str(article)
         snippet = (context[:180] + "...") if len(context) > 180 else context
-        summary_lines.append(f"- Article {idx}: {snippet}")
+        summary_lines.append(f"- {snippet}")
     return "\n".join(summary_lines)
 
 def scenario_tool(user_query: str) -> dict:
@@ -67,24 +80,15 @@ def scenario_tool(user_query: str) -> dict:
         db_result = get_trade_data(commodity, country, last_n_months=12, return_raw=True)
         months = db_result.get("months", [])
         prices = db_result.get("prices", [])
-        meta = db_result.get("metadata")
         thought_process.append(f"[Step 3] Fetched months: {months}")
         thought_process.append(f"[Step 4] Fetched prices: {prices}")
         if months and prices:
             graph_path = plot_price_scenario(
                 commodity, country, months, prices, prices, direction="none", pct=0
             )
-            if meta:
-                source_val = getattr(meta, "source", None) or meta.get("source")
-                updated_val = getattr(meta, "updated_at", None) or meta.get("updated_at")
-                updated_str = str(updated_val)[:10] if updated_val else None
-                source_str = f"{source_val}, updated {updated_str}" if updated_str else f"{source_val}" if source_val else "Unknown source"
-            else:
-                source_str = "Unknown source"
             summary = (
                 f"Here's the recent price trend for {commodity} in {country} (last 12 months).\n"
-                f"Min price: {min(prices):.2f}, Max price: {max(prices):.2f}.\n"
-                f"Source: {source_str}"
+                f"Min price: {min(prices):.2f}, Max price: {max(prices):.2f}."
             )
             thought_process.append(f"[Step 5] Generated graph at {graph_path}")
             return {
@@ -107,7 +111,7 @@ def scenario_tool(user_query: str) -> dict:
         thought_process.append("[Step 8] Synthesized evidence from RAG embeddings.")
         return {
             "response": (
-                "Based on my analysis of relevant RAG-embedded articles and reports in the database, here's what they say:\n"
+                "Based on my analysis of relevant reports in the database, here's what they say:\n"
                 + summary
             ),
             "thought_process": thought_process
@@ -176,14 +180,12 @@ def forecast_trade(
         forecast_value = result.get("forecast_value", "Unknown")
         confidence = result.get("confidence", "Medium")
         reasoning = result.get("reasoning", "")
-        sources = result.get("sources", [])
 
         explanation = (
             f"Based on analysis of recent reports:\n"
             f" **Forecast**: {forecast_value}\n"
             f" **Confidence**: {confidence}\n"
-            f" **Insight**: {reasoning}\n"
-            f" **Sources**: {', '.join(sources[:3])}{'...' if len(sources) > 3 else ''}"
+            f" **Insight**: {reasoning}"
         )
 
         return {
@@ -193,58 +195,215 @@ def forecast_trade(
     except Exception as e:
         return {"error": f"Forecasting failed: {str(e)}"}
 
-comparative_tool = AgentTool(comparative_agent)
-comparative_agent_raw = comparative_agent
-scenario_agent_tool = scenario_tool
-forecasting_tool = forecast_trade
-rag_tool = ask_knowledgebase
+ROUTER_PROMPT = """
+You are Zeno, an AI Economist Assistant for East African agricultural trade.
 
-root_agent = ADKAgent(
-    name="zeno_root_agent",
-    model="gemini-1.5-flash",
-    description="The Zeno Root Agent is an AI Economist Assistant specialized in Kenyan Agricultural trade dynamics.",
-    instruction="You are Zeno, an AI Economist Assistant for Kenya Agricultural Trade. Answer questions with economic rigor. Use tools for data tasks: forecast_trade, scenario_tool, comparative_tool, ask_knowledgebase. Always explain assumptions, cite sources, and offer to visualize or dive deeper.",
-    tools=[
-        forecasting_tool,
-        scenario_agent_tool,
-        comparative_tool,
-        rag_tool,
-    ],
-)
+Classify the user's query into one of these types:
+- "scenario": for "what if", hypothetical shocks, price drops/increases, policy impacts.
+- "forecast": for predictions about future values (price, export volume, revenue).
+- "comparative": for comparisons between countries, crops, or time periods.
+- "rag": for general knowledge questions not requiring data analysis.
+
+Also extract key parameters when possible:
+- commodity (maize, coffee, tea)
+- country (Kenya, Uganda, etc.)
+- metric (price, export_volume, revenue) — only for forecast
+- percentage (e.g., 20) — only for scenario
+- direction (increase/decrease) — only for scenario
+- timeframe (e.g., "next 2 years") — for forecast/scenario
+
+Respond ONLY in valid JSON format with this structure:
+{{
+  "type": "scenario|forecast|comparative|rag",
+  "commodity": "...",
+  "country": "...",
+  "metric": "...",
+  "percentage": 20,
+  "direction": "decrease",
+  "timeframe": "next 1 year"
+}}
+
+If a field is unknown, omit it or set to null.
+User query: "{query}"
+""".strip()
+
+def route_query(user_query: str) -> dict:
+    try:
+        full_prompt = ROUTER_PROMPT.format(query=user_query)
+        model = genai.GenerativeModel("models/gemini-2.5-flash")
+        response = model.generate_content(full_prompt)
+        raw_text = response.text.strip()
+        
+        if raw_text.startswith("```json"):
+            raw_text = raw_text[7:-3].strip()
+        elif raw_text.startswith("```"):
+            raw_text = raw_text[3:-3].strip()
+        
+        try:
+            return json.loads(raw_text)
+        except json.JSONDecodeError:
+            raise ValueError("Invalid JSON from model")
+            
+    except Exception as e:
+        q = user_query.lower()
+        if user_query.lower().startswith("what is"):
+            return {"type": "rag"}
+        if any(w in q for w in ["what if", "scenario", "drop", "increase", "decrease", "shock", "fall", "rise"]):
+            typ = "scenario"
+        elif any(w in q for w in ["forecast", "predict", "next year", "next month", "next 2 years", "trend", "project"]):
+            typ = "forecast"
+        elif any(w in q for w in ["compare", "vs", "versus", "difference", "relative", "between .* and"]):
+            typ = "comparative"
+        else:
+            typ = "rag"
+        return {"type": typ}
 
 app = FastAPI()
 
 @app.post("/query")
 async def query(request: Request):
     data = await request.json()
-    user_input = data.get("query", "")
+    user_query = data.get("query", "").strip()
+    
+    if not user_query:
+        return JSONResponse({"error": "Query is required"}, status_code=400)
+
     try:
-        response = root_agent.run(user_input, tool_call_config={"allowed_tools": "any"})
-        final_response = getattr(response, "text", response)
-        return JSONResponse({"response": final_response})
+        routed = route_query(user_query)
+        query_type = routed.get("type", "rag")
+
+        if query_type == "scenario":
+            result = scenario_tool(user_query)
+            return JSONResponse(result)
+
+        elif query_type == "forecast":
+            params = {
+                "commodity": routed.get("commodity"),
+                "metric": routed.get("metric", "price"),
+                "timeframe": routed.get("timeframe", "next 2 years"),
+                "country": routed.get("country"),
+            }
+            if not (params["commodity"] and params["country"]):
+                return JSONResponse({
+                    "error": "Could not extract commodity and country. Please specify them clearly (e.g., 'maize in Kenya')."
+                })
+            result = forecast_trade(**params)
+            return JSONResponse(result)
+
+        elif query_type == "comparative":
+            q_lower = user_query.lower()
+            detected_countries = [c for c in SUPPORTED_COUNTRIES if c in q_lower]
+            detected_commodities = [c for c in SUPPORTED_COMMODITIES if c in q_lower]
+
+            if len(detected_countries) < 2:
+                return JSONResponse({
+                    "error": "Please specify at least two countries to compare (e.g., 'Kenya and Ethiopia')."
+                })
+            if not detected_commodities:
+                return JSONResponse({
+                    "error": "Please specify a commodity (maize, coffee, or tea)."
+                })
+
+            from zeno_agent.tools.query import query_embeddings
+            raw_rag = query_embeddings(user_query, top_k=5)
+            rag_results = clean_and_deduplicate_rag_results(raw_rag)
+            
+            evidence_blocks = []
+            for doc in rag_results:
+                content = doc["content"]
+                if len(content) > 300:
+                    content = content[:300].rsplit(" ", 1)[0] + "..."
+                evidence_blocks.append(content)
+            
+            evidence_text = " ".join(evidence_blocks) if evidence_blocks else "No specific evidence found."
+
+            prompt = f"""You are Dr. Zeno, a Senior Economist at the East African Trade Institute. 
+User Query: "{user_query}"
+Evidence: {evidence_text}
+Instructions:
+- Start with a clear conclusion (e.g., "Ethiopia exports more coffee than Kenya").
+- Support with 2-3 key facts from the evidence.
+- Explain WHY (e.g., production scale, policy, global demand).
+- Output ONLY the analysis — no disclaimers, no lists, no markdown, no source citations.
+- Keep it under 150 words.
+Analysis:"""
+
+            model = genai.GenerativeModel("models/gemini-2.5-flash")
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    max_output_tokens=250,
+                    temperature=0.2
+                )
+            )
+            return JSONResponse({"response": response.text.strip()})
+
+        else:
+            response = ask_knowledgebase(user_query)
+            return JSONResponse({"response": response})
+
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": f"Processing failed: {str(e)}"}, status_code=500)
 
 @app.get("/healthz")
 def health():
     return {"status": "ok"}
 
-def main():
-    if not os.getenv("GOOGLE_API_KEY"):
-        print("CRITICAL ERROR: GOOGLE_API_KEY environment variable is not set.")
-        return
+import asyncio
 
-    print("Zeno Root Agent ready. Type 'quit' to exit.")
+async def run_cli():
+    print("Zeno Agent (Routing Mode) ready. Type 'quit' to exit.")
     while True:
-        user_input = input("You: ")
-        if user_input.strip().lower() in {"quit", "exit"}:
+        user_input = input("You: ").strip()
+        if user_input.lower() in {"quit", "exit"}:
             break
         try:
-            response = root_agent.run(user_input, tool_call_config={"allowed_tools": "any"})
-            final_response = getattr(response, "text", response)
-            print("Zeno:", final_response)
+            routed = route_query(user_input)
+            print(f"[DEBUG] Routed to: {routed}")
+            if routed["type"] == "scenario":
+                result = scenario_tool(user_input)
+                print("Zeno:", result["response"])
+            elif routed["type"] == "forecast":
+                params = {
+                    "commodity": routed.get("commodity", "maize"),
+                    "metric": routed.get("metric", "price"),
+                    "timeframe": routed.get("timeframe", "next 2 years"),
+                    "country": routed.get("country", "kenya"),
+                }
+                result = forecast_trade(**params)
+                print("Zeno:", result.get("explanation", result))
+            elif routed["type"] == "comparative":
+                q_lower = user_input.lower()
+                detected_countries = [c for c in SUPPORTED_COUNTRIES if c in q_lower]
+                detected_commodities = [c for c in SUPPORTED_COMMODITIES if c in q_lower]
+                if len(detected_countries) < 2 or not detected_commodities:
+                    print("Zeno: Please specify two countries and a commodity (e.g., 'coffee in Kenya and Ethiopia').")
+                else:
+                    from zeno_agent.tools.query import query_embeddings
+                    raw_rag = query_embeddings(user_input, top_k=5)
+                    rag_results = clean_and_deduplicate_rag_results(raw_rag)
+                    evidence_blocks = []
+                    for doc in rag_results:
+                        content = doc["content"]
+                        if len(content) > 300:
+                            content = content[:300].rsplit(" ", 1)[0] + "..."
+                        evidence_blocks.append(content)
+                    evidence_text = " ".join(evidence_blocks) if evidence_blocks else "No evidence found."
+                    prompt = f"""You are Dr. Zeno, a Senior Economist at the East African Trade Institute. 
+User Query: "{user_input}"
+Evidence: {evidence_text}
+Instructions: Start with a clear conclusion. Support with 2-3 facts. Explain drivers. No source citations. Under 150 words. Only output analysis.
+Analysis:"""
+                    model = genai.GenerativeModel("models/gemini-2.5-flash")
+                    response = model.generate_content(prompt)
+                    print("Zeno:", response.text.strip())
+            else:
+                print("Zeno:", ask_knowledgebase(user_input))
         except Exception as e:
             print(f"ERROR: {e}")
+
+def main():
+    asyncio.run(run_cli())
 
 if __name__ == "__main__":
     if os.environ.get("CLI_MODE", "0") == "1":
