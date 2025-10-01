@@ -1,7 +1,6 @@
 import os
 import re
 import json
-from dotenv import load_dotenv
 from datetime import datetime
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, Request
@@ -13,14 +12,15 @@ from zeno_agent.scenario import ScenarioSubAgent
 from zeno_agent.forecasting import ForecastingAgent
 from zeno_agent.rag_tools import ask_knowledgebase
 
+
 SUPPORTED_COUNTRIES = {"kenya", "rwanda", "tanzania", "uganda", "ethiopia"}
 SUPPORTED_COMMODITIES = {"maize", "coffee", "tea"}
 
-load_dotenv()
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
     raise EnvironmentError("GOOGLE_API_KEY environment variable is not set.")
+
 
 def clean_and_deduplicate_rag_results(rag_results: list) -> list:
     seen = set()
@@ -36,16 +36,19 @@ def clean_and_deduplicate_rag_results(rag_results: list) -> list:
         cleaned.append({"content": content})
     return cleaned
 
+
 def is_in_scope(query: str) -> bool:
     q = query.lower()
     return (any(c in q for c in SUPPORTED_COUNTRIES) and
             any(prod in q for prod in SUPPORTED_COMMODITIES))
+
 
 def parse_query(query: str):
     q = query.lower()
     commodity = next((prod for prod in SUPPORTED_COMMODITIES if prod in q), None)
     country = next((cty for cty in SUPPORTED_COUNTRIES if cty in q), None)
     return commodity, country
+
 
 def summarize_articles(articles):
     if not articles:
@@ -56,6 +59,7 @@ def summarize_articles(articles):
         snippet = (context[:180] + "...") if len(context) > 180 else context
         summary_lines.append(f"- {snippet}")
     return "\n".join(summary_lines)
+
 
 def scenario_tool(user_query: str) -> dict:
     thought_process = []
@@ -72,6 +76,7 @@ def scenario_tool(user_query: str) -> dict:
             "followup": "Try a question like: 'Forecast maize exports for Kenya next year?'",
             "thought_process": thought_process
         }
+
 
     commodity, country = parse_query(user_query)
     thought_process.append(f"[Step 2] Parsed commodity: {commodity}, country: {country}")
@@ -102,6 +107,7 @@ def scenario_tool(user_query: str) -> dict:
                 "thought_process": thought_process
             }
 
+
     thought_process.append("[Step 6] Performing semantic search for unstructured scenario analysis from RAG embeddings...")
     articles = semantic_search_rag_embeddings(user_query, top_k=3)
     if articles:
@@ -115,6 +121,7 @@ def scenario_tool(user_query: str) -> dict:
             ),
             "thought_process": thought_process
         }
+
 
     thought_process.append("[Step 9] Delegating to ScenarioSubAgent for scenario simulation.")
     result = ScenarioSubAgent().handle(user_query)
@@ -133,7 +140,9 @@ def scenario_tool(user_query: str) -> dict:
     result["thought_process"] = thought_process
     return result
 
+
 forecasting_agent = ForecastingAgent()
+
 
 def forecast_trade(
     commodity: str,
@@ -147,9 +156,11 @@ def forecast_trade(
     if not all([commodity, metric, timeframe, country]):
         return {"error": "Missing required parameters: commodity, metric, timeframe, country"}
 
+
     commodity = commodity.lower().strip()
     metric = metric.lower().replace(" ", "_")
     country = country.lower().strip()
+
 
     commodity_mapping = {
         "coffee": "coffee_arabica" if country == "kenya" else "coffee_robusta",
@@ -157,8 +168,10 @@ def forecast_trade(
     }
     normalized_commodity = commodity_mapping.get(commodity, commodity)
 
+
     if not re.match(r"next \d+ (years|months)", timeframe.lower()):
         return {"error": "Invalid timeframe format. Use 'next X years' or 'next X months'"}
+
 
     params = {
         "commodity": normalized_commodity,
@@ -171,14 +184,17 @@ def forecast_trade(
         "original_commodity": commodity
     }
 
+
     try:
         result = forecasting_agent.run(params)
         if "error" in result:
             return {"error": result["error"]}
 
+
         forecast_value = result.get("forecast_value", "Unknown")
         confidence = result.get("confidence", "Medium")
         reasoning = result.get("reasoning", "")
+
 
         explanation = (
             f"Based on analysis of recent reports:\n"
@@ -187,6 +203,7 @@ def forecast_trade(
             f" **Insight**: {reasoning}"
         )
 
+
         return {
             "result": result,
             "explanation": explanation
@@ -194,14 +211,17 @@ def forecast_trade(
     except Exception as e:
         return {"error": f"Forecasting failed: {str(e)}"}
 
+
 ROUTER_PROMPT = """
 You are Zeno, an AI Economist Assistant for East African agricultural trade.
+
 
 Classify the user's query into one of these types:
 - "scenario": for "what if", hypothetical shocks, price drops/increases, policy impacts.
 - "forecast": for predictions about future values (price, export volume, revenue).
 - "comparative": for comparisons between countries, crops, or time periods.
 - "rag": for general knowledge questions not requiring data analysis.
+
 
 Also extract key parameters when possible:
 - commodity (maize, coffee, tea)
@@ -211,20 +231,23 @@ Also extract key parameters when possible:
 - direction (increase/decrease) — only for scenario
 - timeframe (e.g., "next 2 years") — for forecast/scenario
 
+
 Respond ONLY in valid JSON format with this structure:
 {{
-  "type": "scenario|forecast|comparative|rag",
-  "commodity": "...",
-  "country": "...",
-  "metric": "...",
-  "percentage": 20,
-  "direction": "decrease",
-  "timeframe": "next 1 year"
+ "type": "scenario|forecast|comparative|rag",
+ "commodity": "...",
+ "country": "...",
+ "metric": "...",
+ "percentage": 20,
+ "direction": "decrease",
+ "timeframe": "next 1 year"
 }}
+
 
 If a field is unknown, omit it or set to null.
 User query: "{query}"
 """.strip()
+
 
 def route_query(user_query: str) -> dict:
     try:
@@ -232,17 +255,17 @@ def route_query(user_query: str) -> dict:
         model = genai.GenerativeModel("models/gemini-2.5-flash", api_key=GOOGLE_API_KEY)
         response = model.generate_content(full_prompt)
         raw_text = response.text.strip()
-        
+    
         if raw_text.startswith("```json"):
             raw_text = raw_text[7:-3].strip()
         elif raw_text.startswith("```"):
             raw_text = raw_text[3:-3].strip()
-        
+    
         try:
             return json.loads(raw_text)
         except json.JSONDecodeError:
             raise ValueError("Invalid JSON from model")
-            
+        
     except Exception as e:
         q = user_query.lower()
         if user_query.lower().startswith("what is"):
@@ -257,23 +280,29 @@ def route_query(user_query: str) -> dict:
             typ = "rag"
         return {"type": typ}
 
+
 app = FastAPI()
+
 
 @app.post("/query")
 async def query(request: Request):
     data = await request.json()
     user_query = data.get("query", "").strip()
-    
+
+
     if not user_query:
         return JSONResponse({"error": "Query is required"}, status_code=400)
+
 
     try:
         routed = route_query(user_query)
         query_type = routed.get("type", "rag")
 
+
         if query_type == "scenario":
             result = scenario_tool(user_query)
             return JSONResponse(result)
+
 
         elif query_type == "forecast":
             params = {
@@ -289,11 +318,11 @@ async def query(request: Request):
             result = forecast_trade(**params)
             return JSONResponse(result)
 
+
         elif query_type == "comparative":
             q_lower = user_query.lower()
             detected_countries = [c for c in SUPPORTED_COUNTRIES if c in q_lower]
             detected_commodities = [c for c in SUPPORTED_COMMODITIES if c in q_lower]
-
             if len(detected_countries) < 2:
                 return JSONResponse({
                     "error": "Please specify at least two countries to compare (e.g., 'Kenya and Ethiopia')."
@@ -303,20 +332,22 @@ async def query(request: Request):
                     "error": "Please specify a commodity (maize, coffee, or tea)."
                 })
 
+
             from zeno_agent.tools.query import query_embeddings
             raw_rag = query_embeddings(user_query, top_k=5)
             rag_results = clean_and_deduplicate_rag_results(raw_rag)
-            
+        
             evidence_blocks = []
             for doc in rag_results:
                 content = doc["content"]
                 if len(content) > 300:
                     content = content[:300].rsplit(" ", 1)[0] + "..."
                 evidence_blocks.append(content)
-            
+        
             evidence_text = " ".join(evidence_blocks) if evidence_blocks else "No specific evidence found."
 
-            prompt = f"""You are Dr. Zeno, a Senior Economist at the East African Trade Institute. 
+
+            prompt = f"""You are Dr. Zeno, a Senior Economist at the East African Trade Institute.
 User Query: "{user_query}"
 Evidence: {evidence_text}
 Instructions:
@@ -326,6 +357,7 @@ Instructions:
 - Output ONLY the analysis — no disclaimers, no lists, no markdown, no source citations.
 - Keep it under 150 words.
 Analysis:"""
+
 
             model = genai.GenerativeModel("models/gemini-2.5-flash", api_key=GOOGLE_API_KEY)
             response = model.generate_content(
@@ -337,18 +369,23 @@ Analysis:"""
             )
             return JSONResponse({"response": response.text.strip()})
 
+
         else:
             response = ask_knowledgebase(user_query)
             return JSONResponse({"response": response})
 
+
     except Exception as e:
         return JSONResponse({"error": f"Processing failed: {str(e)}"}, status_code=500)
+
 
 @app.get("/healthz")
 def health():
     return {"status": "ok"}
 
+
 import asyncio
+
 
 async def run_cli():
     print("Zeno Agent (Routing Mode) ready. Type 'quit' to exit.")
@@ -388,7 +425,7 @@ async def run_cli():
                             content = content[:300].rsplit(" ", 1)[0] + "..."
                         evidence_blocks.append(content)
                     evidence_text = " ".join(evidence_blocks) if evidence_blocks else "No evidence found."
-                    prompt = f"""You are Dr. Zeno, a Senior Economist at the East African Trade Institute. 
+                    prompt = f"""You are Dr. Zeno, a Senior Economist at the East African Trade Institute.
 User Query: "{user_input}"
 Evidence: {evidence_text}
 Instructions: Start with a clear conclusion. Support with 2-3 facts. Explain drivers. No source citations. Under 150 words. Only output analysis.
@@ -401,8 +438,10 @@ Analysis:"""
         except Exception as e:
             print(f"ERROR: {e}")
 
+
 def main():
     asyncio.run(run_cli())
+
 
 if __name__ == "__main__":
     if os.environ.get("CLI_MODE", "0") == "1":
@@ -411,5 +450,3 @@ if __name__ == "__main__":
         import uvicorn
         port = int(os.environ.get("PORT", 8080))
         uvicorn.run("agent:app", host="0.0.0.0", port=port)
-
-

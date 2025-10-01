@@ -1,12 +1,12 @@
 import os
-from dotenv import load_dotenv
 import psycopg2
 from typing import List, Dict, Any, Optional
 from google import genai
 
-load_dotenv()
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
 
 def embed_text(text: str) -> Optional[List[float]]:
     try:
@@ -16,6 +16,7 @@ def embed_text(text: str) -> Optional[List[float]]:
     except Exception as e:
         print(f"Error generating embedding: {e}")
         return None
+
 
 def query_embeddings(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
     query_vector = embed_text(query)
@@ -35,5 +36,3 @@ def query_embeddings(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
     except Exception as e:
         print(f"Error querying embeddings: {e}")
         return []
-
-
