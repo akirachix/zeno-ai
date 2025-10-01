@@ -11,8 +11,6 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
     raise EnvironmentError("GOOGLE_API_KEY environment variable is not set.")
 
-genai.configure(api_key=GOOGLE_API_KEY)
-
 def merge_rag_content(rag_results: list) -> str:
     seen = set()
     merged_content = []
@@ -56,7 +54,7 @@ Instructions:
 - Keep response under 150 words.
 Analysis:"""
 
-    model = genai.GenerativeModel("models/gemini-2.5-flash")
+    model = genai.GenerativeModel("models/gemini-2.5-flash", api_key=GOOGLE_API_KEY)
     response = model.generate_content(
         prompt,
         generation_config=genai.GenerationConfig(
@@ -96,3 +94,5 @@ if __name__ == "__main__":
     evidence = comparative_search(test_query, top_k=5)
     final_answer = synthesize_comparative_analysis(test_query, evidence)
     print("Final Answer:\n", final_answer)
+
+

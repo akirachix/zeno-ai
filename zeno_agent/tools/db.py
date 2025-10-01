@@ -22,18 +22,14 @@ if not GOOGLE_API_KEY:
     )
 
 engine = create_engine(DATABASE_URL)
-genai.configure(api_key=GOOGLE_API_KEY)
 
 def get_text_embedding(text: str) -> Optional[List[float]]:
     """
     Returns a list embedding for a string using Gemini Embeddings API.
     """
     try:
-        res = genai.embed_content(
-            model="models/text-embedding-004",
-            content=text,
-            task_type="retrieval_document"
-        )
+        model = genai.GenerativeModel("models/text-embedding-004", api_key=GOOGLE_API_KEY)
+        res = model.embed_content(text)
         return res["embedding"]
     except Exception as e:
         print(f"Error generating embedding: {e}")
@@ -46,10 +42,8 @@ def embed_text(text: str) -> Optional[List[float]]:
     Returns a list of floats (the embedding vector), or None on error.
     """
     try:
-        response = genai.embed_content(
-            model="models/text-embedding-004",
-            content=text
-        )
+        model = genai.GenerativeModel("models/text-embedding-004", api_key=GOOGLE_API_KEY)
+        response = model.embed_content(text)
         embedding = response["embedding"]
         return embedding
     except Exception as e:

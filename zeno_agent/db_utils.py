@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
 db_pool = None
 cache = TTLCache(maxsize=1000, ttl=3600)  
 
@@ -89,15 +88,12 @@ def get_indicator_id_by_metric(metric: str) -> int:
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-
         metric_mappings = {
             "export_volume": ["gross output (agriculture)", "export volume"],
             "price": ["commodity price", "price"],
             "revenue": ["value added (agriculture)", "revenue"]
         }
         possible_names = metric_mappings.get(metric.lower(), [metric.lower()])
-        
-
         for name in possible_names:
             cur.execute(
                 "SELECT id FROM zeno.indicators WHERE LOWER(name) LIKE %s",
@@ -107,7 +103,6 @@ def get_indicator_id_by_metric(metric: str) -> int:
             if result:
                 cache[cache_key] = result[0]
                 return result[0]
-        
         raise ValueError(
             f"Metric '{metric}' not found in zeno.indicators. "
             "Ensure the indicators table includes relevant names (e.g., 'Gross Output (Agriculture)', 'Commodity Price')."
