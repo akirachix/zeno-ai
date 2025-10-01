@@ -4,12 +4,11 @@ import os
 import pandas as pd
 from typing import Optional
 from cachetools import TTLCache
-from dotenv import load_dotenv
 
-load_dotenv()
 
 db_pool = None
-cache = TTLCache(maxsize=1000, ttl=3600)  
+cache = TTLCache(maxsize=1000, ttl=3600) 
+
 
 def init_db_pool():
     """Initialize database connection pool."""
@@ -19,6 +18,7 @@ def init_db_pool():
         raise EnvironmentError("DATABASE_URL environment variable is not set.")
     db_pool = SimpleConnectionPool(1, 20, db_url)
 
+
 def get_db_connection():
     """Get a connection from the pool."""
     global db_pool
@@ -26,10 +26,12 @@ def get_db_connection():
         init_db_pool()
     return db_pool.getconn()
 
+
 def release_db_connection(conn):
     """Release a connection back to the pool."""
     global db_pool
     db_pool.putconn(conn)
+
 
 def get_country_id_by_name(country_name: str) -> int:
     """Fetch country_id from zeno.countries by name."""
@@ -53,6 +55,7 @@ def get_country_id_by_name(country_name: str) -> int:
         cur.close()
         release_db_connection(conn)
 
+
 def get_crop_id_by_name(commodity: str) -> int:
     """Fetch crop_id from zeno.crops by name."""
     cache_key = f"crop_{commodity.lower()}"
@@ -74,6 +77,7 @@ def get_crop_id_by_name(commodity: str) -> int:
     finally:
         cur.close()
         release_db_connection(conn)
+
 
 def get_indicator_id_by_metric(metric: str) -> int:
     """
@@ -111,6 +115,7 @@ def get_indicator_id_by_metric(metric: str) -> int:
         cur.close()
         release_db_connection(conn)
 
+
 def get_trade_data_from_db(
     country_id: int,
     crop_id: int,
@@ -122,7 +127,7 @@ def get_trade_data_from_db(
     conn = get_db_connection()
     cur = conn.cursor()
     query = """
-        SELECT 
+        SELECT
             td.year,
             td.month,
             td.value,
@@ -153,6 +158,7 @@ def get_trade_data_from_db(
     finally:
         cur.close()
         release_db_connection(conn)
+
 
 def query_rag_embeddings_semantic(query_embedding, top_k=5):
     """Perform semantic similarity search using pgvector on zeno.rag_embeddings."""
