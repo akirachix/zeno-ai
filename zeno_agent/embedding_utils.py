@@ -21,14 +21,10 @@ def encode_query_to_vector(query_text: str) -> list:
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise EnvironmentError("GOOGLE_API_KEY environment variable is not set.")
-    genai.configure(api_key=api_key)
-    
+
     try:
-        result = genai.embed_content(
-            model="models/text-embedding-004",
-            content=query_text,
-            task_type="retrieval_query"
-        )
+        model = genai.GenerativeModel("models/text-embedding-004", api_key=api_key)
+        result = model.embed_content(query_text)
         embedding_cache[cache_key] = result["embedding"]
         return result["embedding"]
     except Exception as e:

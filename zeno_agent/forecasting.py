@@ -23,8 +23,6 @@ from xgboost import XGBRegressor
 api_key = os.getenv("GOOGLE_API_KEY")
 if not api_key:
     raise EnvironmentError("GOOGLE_API_KEY environment variable is not set.")
-genai.configure(api_key=api_key)
-
 
 class ForecastingAgent:
     def __init__(self):
@@ -276,7 +274,7 @@ Example:
 Assumed Arabica coffee for Kenya as it is the dominant type per KNBS reports. The forecast reflects rising global demand and improved post-harvest infrastructure, consistent with KNBS 2023 findings. Prophet was chosen due to detected seasonality in the data.
 """
 
-            model = genai.GenerativeModel("models/gemini-2.5-flash")
+            model = genai.GenerativeModel("models/gemini-2.5-flash", api_key=api_key)
             response = model.generate_content(
                 prompt,
                 generation_config=genai.GenerationConfig(
@@ -325,4 +323,3 @@ Assumed Arabica coffee for Kenya as it is the dominant type per KNBS reports. Th
             if run_id:
                 log_step(run_id, step_order, "error", {"error": str(e)})
             return {"error": str(e)}
-        

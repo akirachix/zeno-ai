@@ -21,7 +21,6 @@ load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
     raise EnvironmentError("GOOGLE_API_KEY environment variable is not set.")
-genai.configure(api_key=GOOGLE_API_KEY)
 
 def clean_and_deduplicate_rag_results(rag_results: list) -> list:
     seen = set()
@@ -230,7 +229,7 @@ User query: "{query}"
 def route_query(user_query: str) -> dict:
     try:
         full_prompt = ROUTER_PROMPT.format(query=user_query)
-        model = genai.GenerativeModel("models/gemini-2.5-flash")
+        model = genai.GenerativeModel("models/gemini-2.5-flash", api_key=GOOGLE_API_KEY)
         response = model.generate_content(full_prompt)
         raw_text = response.text.strip()
         
@@ -328,7 +327,7 @@ Instructions:
 - Keep it under 150 words.
 Analysis:"""
 
-            model = genai.GenerativeModel("models/gemini-2.5-flash")
+            model = genai.GenerativeModel("models/gemini-2.5-flash", api_key=GOOGLE_API_KEY)
             response = model.generate_content(
                 prompt,
                 generation_config=genai.GenerationConfig(
@@ -394,7 +393,7 @@ User Query: "{user_input}"
 Evidence: {evidence_text}
 Instructions: Start with a clear conclusion. Support with 2-3 facts. Explain drivers. No source citations. Under 150 words. Only output analysis.
 Analysis:"""
-                    model = genai.GenerativeModel("models/gemini-2.5-flash")
+                    model = genai.GenerativeModel("models/gemini-2.5-flash", api_key=GOOGLE_API_KEY)
                     response = model.generate_content(prompt)
                     print("Zeno:", response.text.strip())
             else:
@@ -412,3 +411,5 @@ if __name__ == "__main__":
         import uvicorn
         port = int(os.environ.get("PORT", 8080))
         uvicorn.run("agent:app", host="0.0.0.0", port=port)
+
+
