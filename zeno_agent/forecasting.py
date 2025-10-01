@@ -34,7 +34,6 @@ class ForecastingAgent:
         self.supported_models = ["ARIMA", "Prophet", "XGBoost", "Ensemble"]
 
     def validate_params(self, params: Dict[str, Any]) -> List[str]:
-        """Validate input parameters against supported values."""
         errors = []
         commodity = params.get("commodity", "").lower()
         metric = params.get("metric", "").lower()
@@ -53,7 +52,6 @@ class ForecastingAgent:
         return errors
 
     def parse_timeframe(self, timeframe: str) -> int:
-        """Parse timeframe string to number of months (e.g., 'next 2 years' → 24)."""
         match = re.match(r"next (\d+) (year|years|month|months)", timeframe.lower())
         if not match:
             raise ValueError(f"Invalid timeframe: {timeframe}")
@@ -62,7 +60,6 @@ class ForecastingAgent:
         return num * 12 if 'year' in unit else num
 
     def preprocess_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Preprocess time-series data: handle missing values, outliers, and feature engineering."""
         df = df.copy()
         df['y'] = df['y'].interpolate(method='linear').ffill().bfill()
         df = df[np.abs(df['y'] - df['y'].mean()) <= (3 * df['y'].std())]
@@ -72,7 +69,6 @@ class ForecastingAgent:
         return df.sort_values('ds').reset_index(drop=True)
 
     def select_model(self, df: pd.DataFrame, metric: str, periods: int) -> tuple[str, str]:
-        """Select forecasting model based on data characteristics and return explanation."""
         freq = df['ds'].dt.inferred_freq
         has_seasonality = (freq in ['MS', 'M', 'QS', 'Q']) and len(df) >= 20
         has_multi_year = df['ds'].dt.year.nunique() >= 3
@@ -87,14 +83,12 @@ class ForecastingAgent:
         return "Ensemble", "Ensemble was chosen to combine strengths of ARIMA, Prophet, and XGBoost for robustness."
 
     def evaluate_forecast(self, actual: pd.Series, predicted: pd.Series) -> Dict[str, float]:
-        """Calculate MAE, RMSE, and MAPE for forecast evaluation."""
         mae = mean_absolute_error(actual, predicted)
         rmse = np.sqrt(mean_squared_error(actual, predicted))
         mape = np.mean(np.abs((actual - predicted) / actual)) * 100 if not np.any(actual == 0) else float('inf')
         return {"MAE": mae, "RMSE": rmse, "MAPE": mape}
 
     def run_prophet(self, df: pd.DataFrame, periods: int) -> tuple:
-        """Run Prophet model for forecasting."""
         m = Prophet()
         m.fit(df[['ds', 'y']])
         future = m.make_future_dataframe(periods=periods, freq='MS')
@@ -104,7 +98,6 @@ class ForecastingAgent:
         return forecast_series, confidence_intervals
 
     def run_arima(self, df: pd.DataFrame, periods: int) -> tuple:
-        """Run ARIMA model for forecasting."""
         model = ARIMA(df['y'], order=(1,1,1))
         fitted = model.fit()
         forecast_result = fitted.get_forecast(steps=periods)
@@ -114,7 +107,6 @@ class ForecastingAgent:
         return forecast_series, confidence_intervals
 
     def run_xgboost(self, df: pd.DataFrame, periods: int) -> tuple:
-        """Run XGBoost model for forecasting."""
         df = df.copy()
         df['lag_1'] = df['y'].shift(1)
         df['lag_12'] = df['y'].shift(12)
@@ -135,7 +127,6 @@ class ForecastingAgent:
         return forecast_series, confidence_intervals
 
     def run_ensemble(self, df: pd.DataFrame, periods: int) -> tuple:
-        """Run ensemble of ARIMA, Prophet, and XGBoost."""
         arima_forecast, _ = self.run_arima(df, periods)
         prophet_forecast, _ = self.run_prophet(df, periods)
         xgboost_forecast, _ = self.run_xgboost(df, periods)
@@ -144,7 +135,6 @@ class ForecastingAgent:
         return ensemble_forecast, confidence_intervals
 
     def calculate_confidence(self, confidence_intervals: list, std_dev: float) -> str:
-        """Calculate confidence level based on interval width."""
         if not confidence_intervals or isinstance(confidence_intervals[0], str):
             return "Medium"
         try:
@@ -159,7 +149,6 @@ class ForecastingAgent:
             return "Medium"
 
     def adjust_forecast_with_rag(self, forecast: list, rag_context: list) -> list:
-        """Adjust forecast based on RAG context (e.g., policy or weather events)."""
         for doc in rag_context:
             content = doc.get("content", "").lower()
             if "drought" in content:
@@ -169,11 +158,6 @@ class ForecastingAgent:
         return forecast
 
     def run(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Main entry point for forecasting.
-        Uses historical data from zeno.trade_data and RAG context.
-        Returns structured JSON with forecast, confidence, reasoning, sources.
-        """
         run_id = params.get("run_id")
         step_order = 1
         errors = self.validate_params(params)
@@ -292,26 +276,16 @@ Example:
 Assumed Arabica coffee for Kenya as it is the dominant type per KNBS reports. The forecast reflects rising global demand and improved post-harvest infrastructure, consistent with KNBS 2023 findings. Prophet was chosen due to detected seasonality in the data.
 """
 
-            try:
-                model = genai.GenerativeModel("models/gemini-1.5-flash")
-                response = model.generate_content(
-                    prompt,
-                    generation_config=genai.GenerationConfig(
-                        max_output_tokens=1000,
-                        temperature=0.3,
-                        top_p=0.95,
-                    )
+            model = genai.GenerativeModel("models/gemini-2.5-flash")
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    max_output_tokens=1000,
+                    temperature=0.3,
+                    top_p=0.95,
                 )
-                reasoning = response.text.strip()
-            except Exception as e:
-                print(f"Warning: Gemini 1.5 Flash failed: {e}")
-                # Fallback to gemini-pro
-                try:
-                    model = genai.GenerativeModel("models/gemini-1.0-pro")
-                    response = model.generate_content(prompt)
-                    reasoning = response.text.strip() + " [Generated using fallback model: gemini-pro]"
-                except Exception as e2:
-                    reasoning = f"LLM explanation failed (gemini-1.5-flash and gemini-pro): {str(e2)}"
+            )
+            reasoning = response.text.strip()
             
             result = {
                 "forecast_value": forecast_value,
@@ -351,3 +325,4 @@ Assumed Arabica coffee for Kenya as it is the dominant type per KNBS reports. Th
             if run_id:
                 log_step(run_id, step_order, "error", {"error": str(e)})
             return {"error": str(e)}
+        

@@ -24,7 +24,6 @@ if not GOOGLE_API_KEY:
 genai.configure(api_key=GOOGLE_API_KEY)
 
 def clean_and_deduplicate_rag_results(rag_results: list) -> list:
-    """Deduplicate content (sources are ignored)."""
     seen = set()
     cleaned = []
     for doc in rag_results:
@@ -35,7 +34,7 @@ def clean_and_deduplicate_rag_results(rag_results: list) -> list:
         if key in seen:
             continue
         seen.add(key)
-        cleaned.append({"content": content})  # Source removed
+        cleaned.append({"content": content})
     return cleaned
 
 def is_in_scope(query: str) -> bool:
@@ -231,7 +230,7 @@ User query: "{query}"
 def route_query(user_query: str) -> dict:
     try:
         full_prompt = ROUTER_PROMPT.format(query=user_query)
-        model = genai.GenerativeModel("models/gemini-1.5-flash")
+        model = genai.GenerativeModel("models/gemini-2.5-flash")
         response = model.generate_content(full_prompt)
         raw_text = response.text.strip()
         
@@ -309,7 +308,6 @@ async def query(request: Request):
             raw_rag = query_embeddings(user_query, top_k=5)
             rag_results = clean_and_deduplicate_rag_results(raw_rag)
             
-            # Build evidence WITHOUT any source references
             evidence_blocks = []
             for doc in rag_results:
                 content = doc["content"]
@@ -330,7 +328,7 @@ Instructions:
 - Keep it under 150 words.
 Analysis:"""
 
-            model = genai.GenerativeModel("models/gemini-pro")
+            model = genai.GenerativeModel("models/gemini-2.5-flash")
             response = model.generate_content(
                 prompt,
                 generation_config=genai.GenerationConfig(
@@ -396,7 +394,7 @@ User Query: "{user_input}"
 Evidence: {evidence_text}
 Instructions: Start with a clear conclusion. Support with 2-3 facts. Explain drivers. No source citations. Under 150 words. Only output analysis.
 Analysis:"""
-                    model = genai.GenerativeModel("models/gemini-pro")
+                    model = genai.GenerativeModel("models/gemini-2.5-flash")
                     response = model.generate_content(prompt)
                     print("Zeno:", response.text.strip())
             else:

@@ -14,7 +14,6 @@ if not GOOGLE_API_KEY:
 genai.configure(api_key=GOOGLE_API_KEY)
 
 def merge_rag_content(rag_results: list) -> str:
-    """Merge all RAG content into one cohesive text block (NO sources, deduplicated)."""
     seen = set()
     merged_content = []
     for doc in rag_results:
@@ -29,14 +28,11 @@ def merge_rag_content(rag_results: list) -> str:
     return " ".join(merged_content)
 
 def comparative_search(query: str, top_k: int = 5) -> str:
-    """Retrieve and merge comparative trade documents into ONE content block."""
     raw_results = query_embeddings(query, top_k=top_k)
     return merge_rag_content(raw_results)
 
 def synthesize_comparative_analysis(query: str, evidence_text: str) -> str:
-    """Generate a final economist-grade analysis from merged evidence."""
     is_weak_evidence = not evidence_text.strip()
-    
     if is_weak_evidence:
         prompt = f"""You are Dr. Zeno, a Senior Economist at the East African Trade Institute. 
 Provide a comparative analysis for this query using your expertise in East African agricultural trade:
@@ -60,7 +56,7 @@ Instructions:
 - Keep response under 150 words.
 Analysis:"""
 
-    model = genai.GenerativeModel("models/gemini-1.0-pro")
+    model = genai.GenerativeModel("models/gemini-2.5-flash")
     response = model.generate_content(
         prompt,
         generation_config=genai.GenerationConfig(
@@ -84,7 +80,7 @@ synthesize_analysis_tool = AgentTool(
 
 comparative_agent = Agent(
     name="comparative_analysis_agent",
-    model="gemini-1.0-pro",
+    model="gemini-2.5-flash",
     description="Specialized agent for comparative analysis.",
     instruction=(
         "You are a highly skilled Comparative Economic Analyst. "
