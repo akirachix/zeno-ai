@@ -3,9 +3,7 @@ from cachetools import TTLCache
 from tenacity import retry, stop_after_attempt, wait_exponential
 import google.generativeai as genai
 
-
 embedding_cache = TTLCache(maxsize=1000, ttl=3600)
-
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
 def encode_query_to_vector(query_text: str) -> list:
@@ -24,7 +22,6 @@ def encode_query_to_vector(query_text: str) -> list:
     if not api_key:
         raise EnvironmentError("GOOGLE_API_KEY environment variable is not set.")
 
-
     try:
         genai.configure(api_key=api_key)
         result = genai.embed_content(
@@ -36,6 +33,3 @@ def encode_query_to_vector(query_text: str) -> list:
         return result["embedding"]
     except Exception as e:
         raise ValueError(f"Failed to generate embedding: {str(e)}")
-
-
-

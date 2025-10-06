@@ -5,36 +5,27 @@ import pandas as pd
 from typing import Optional
 from cachetools import TTLCache
 
-
 db_pool = None
-cache = TTLCache(maxsize=1000, ttl=3600) 
-
+cache = TTLCache(maxsize=1000, ttl=3600)
 
 def init_db_pool():
-    """Initialize database connection pool."""
     global db_pool
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         raise EnvironmentError("DATABASE_URL environment variable is not set.")
-    db_pool = SimpleConnectionPool(1, 20, db_url)
-
+    db_pool = SimpleConnectionPool(1, 5, db_url)
 
 def get_db_connection():
-    """Get a connection from the pool."""
     global db_pool
     if db_pool is None:
         init_db_pool()
     return db_pool.getconn()
 
-
 def release_db_connection(conn):
-    """Release a connection back to the pool."""
     global db_pool
     db_pool.putconn(conn)
 
-
 def get_country_id_by_name(country_name: str) -> int:
-    """Fetch country_id from zeno.countries by name."""
     cache_key = f"country_{country_name.lower()}"
     if cache_key in cache:
         return cache[cache_key]
@@ -55,9 +46,7 @@ def get_country_id_by_name(country_name: str) -> int:
         cur.close()
         release_db_connection(conn)
 
-
 def get_crop_id_by_name(commodity: str) -> int:
-    """Fetch crop_id from zeno.crops by name."""
     cache_key = f"crop_{commodity.lower()}"
     if cache_key in cache:
         return cache[cache_key]
@@ -66,25 +55,19 @@ def get_crop_id_by_name(commodity: str) -> int:
     cur = conn.cursor()
     try:
         cur.execute(
-            "SELECT id FROM zeno.crops WHERE LOWER(name) = LOWER(%s)",
+            "SELECT id FROM zeno.products WHERE LOWER(name) = LOWER(%s)",
             (commodity.strip(),)
         )
         result = cur.fetchone()
         if not result:
-            raise ValueError(f"Commodity '{commodity}' not found in zeno.crops.")
+            raise ValueError(f"Commodity '{commodity}' not found in zeno.products.")
         cache[cache_key] = result[0]
         return result[0]
     finally:
         cur.close()
         release_db_connection(conn)
 
-
 def get_indicator_id_by_metric(metric: str) -> int:
-    """
-    Fetch indicator_id from zeno.indicators by matching metric name.
-    Assumes indicators have names like 'Gross Output (Agriculture)', 'Commodity Price', etc.
-    Uses fuzzy matching for user-friendly inputs.
-    """
     cache_key = f"metric_{metric.lower()}"
     if cache_key in cache:
         return cache[cache_key]
@@ -92,29 +75,27 @@ def get_indicator_id_by_metric(metric: str) -> int:
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        metric_mappings = {
-            "export_volume": ["gross output (agriculture)", "export volume"],
-            "price": ["commodity price", "price"],
-            "revenue": ["value added (agriculture)", "revenue"]
-        }
-        possible_names = metric_mappings.get(metric.lower(), [metric.lower()])
-        for name in possible_names:
-            cur.execute(
-                "SELECT id FROM zeno.indicators WHERE LOWER(name) LIKE %s",
-                (f"%{name}%",)
-            )
-            result = cur.fetchone()
-            if result:
-                cache[cache_key] = result[0]
-                return result[0]
-        raise ValueError(
-            f"Metric '{metric}' not found in zeno.indicators. "
-            "Ensure the indicators table includes relevant names (e.g., 'Gross Output (Agriculture)', 'Commodity Price')."
+        cur.execute(
+            "SELECT id FROM zeno.indicators WHERE LOWER(name) = %s",
+            (metric.lower(),)
         )
+        result = cur.fetchone()
+        if result:
+            cache[cache_key] = result[0]
+            return result[0]
+        
+        indicator_mapping = {'price': 1, 'export_volume': 2, 'revenue': 3}
+        if metric.lower() in indicator_mapping:
+            indicator_id = indicator_mapping[metric.lower()]
+            cur.execute("SELECT id FROM zeno.indicators WHERE id = %s", (indicator_id,))
+            if cur.fetchone():
+                cache[cache_key] = indicator_id
+                return indicator_id
+        
+        raise ValueError(f"Metric '{metric}' not found in zeno.indicators.")
     finally:
         cur.close()
         release_db_connection(conn)
-
 
 def get_trade_data_from_db(
     country_id: int,
@@ -123,31 +104,34 @@ def get_trade_data_from_db(
     start_year: Optional[int] = None,
     end_year: Optional[int] = None
 ) -> pd.DataFrame:
-    """Fetch historical trade data from zeno.trade_data table."""
     conn = get_db_connection()
     cur = conn.cursor()
-    query = """
-        SELECT
-            td.year,
-            td.month,
-            td.value,
+    
+    value_column = "price" if indicator_id == 1 else "quantity"
+    
+    query = f"""
+        SELECT 
+            EXTRACT(YEAR FROM td.date) as year,
+            EXTRACT(MONTH FROM td.date) as month,
+            td.{value_column} as value,
             td.source,
             td.metadata
         FROM zeno.trade_data td
         WHERE td.country_id = %s
           AND td.product_id = %s
           AND td.indicator_id = %s
+          AND td.{value_column} IS NOT NULL
     """
     params = [country_id, crop_id, indicator_id]
     
     if start_year:
-        query += " AND td.year >= %s"
+        query += " AND EXTRACT(YEAR FROM td.date) >= %s"
         params.append(start_year)
     if end_year:
-        query += " AND td.year <= %s"
+        query += " AND EXTRACT(YEAR FROM td.date) <= %s"
         params.append(end_year)
     
-    query += " ORDER BY td.year ASC, td.month ASC"
+    query += " ORDER BY td.date ASC"
     
     try:
         cur.execute(query, params)
@@ -159,9 +143,7 @@ def get_trade_data_from_db(
         cur.close()
         release_db_connection(conn)
 
-
 def query_rag_embeddings_semantic(query_embedding, top_k=5):
-    """Perform semantic similarity search using pgvector on zeno.rag_embeddings."""
     conn = get_db_connection()
     cur = conn.cursor()
     try:

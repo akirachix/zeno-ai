@@ -1,22 +1,22 @@
 import os
 import psycopg2
 from typing import List, Dict, Any, Optional
-from google import genai
-
+import google.generativeai as genai
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-
 def embed_text(text: str) -> Optional[List[float]]:
     try:
-        model = genai.GenerativeModel("models/text-embedding-004", api_key=GOOGLE_API_KEY)
-        response = model.embed_content(text.strip())
-        return response["embedding"]
+        genai.configure(api_key=GOOGLE_API_KEY)
+        result = genai.embed_content(
+            model="models/text-embedding-004",
+            content=text.strip(),
+            task_type="retrieval_document"
+        )
+        return result["embedding"]
     except Exception as e:
-        print(f"Error generating embedding: {e}")
         return None
-
 
 def query_embeddings(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
     query_vector = embed_text(query)
@@ -34,5 +34,4 @@ def query_embeddings(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         conn.close()
         return results
     except Exception as e:
-        print(f"Error querying embeddings: {e}")
         return []
