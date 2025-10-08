@@ -1,15 +1,28 @@
+import os
 import psycopg2
 from psycopg2.pool import SimpleConnectionPool
-import os
+from psycopg2.extensions import register_adapter, AsIs
+import numpy as np
 import pandas as pd
 from typing import Optional
 from cachetools import TTLCache
 
+from .embedding_utils import encode_vector_for_postgres
 
 db_pool = None
-cache = TTLCache(maxsize=1000, ttl=3600) 
+cache = TTLCache(maxsize=1000, ttl=3600)
+
+def adapt_vector(vec):
+    """Convert a Python list or NumPy array into PostgreSQL vector literal."""
+    if isinstance(vec, np.ndarray):
+        vec = vec.tolist()
+    return AsIs("'" + ",".join(str(x) for x in vec) + "'")
+
+register_adapter(np.ndarray, adapt_vector)
+register_adapter(list, adapt_vector)
 
 
+# DATABASE CONNECTION MANAGEMENT
 def init_db_pool():
     """Initialize database connection pool."""
     global db_pool
@@ -18,30 +31,32 @@ def init_db_pool():
         raise EnvironmentError("DATABASE_URL environment variable is not set.")
     db_pool = SimpleConnectionPool(1, 20, db_url)
 
-
 def get_db_connection():
-    """Get a connection from the pool."""
+    """Get a connection from the pool, initializing if necessary."""
     global db_pool
     if db_pool is None:
         init_db_pool()
     return db_pool.getconn()
 
-
 def release_db_connection(conn):
-    """Release a connection back to the pool."""
+    """Release a connection back to the pool safely."""
     global db_pool
-    db_pool.putconn(conn)
-
+    if db_pool and conn is not None:
+        try:
+            db_pool.putconn(conn)
+        except Exception as e:
+            print(f"Error releasing connection: {e}")
 
 def get_country_id_by_name(country_name: str) -> int:
     """Fetch country_id from zeno.countries by name."""
     cache_key = f"country_{country_name.lower()}"
     if cache_key in cache:
         return cache[cache_key]
-    
-    conn = get_db_connection()
-    cur = conn.cursor()
+
+    conn = None
     try:
+        conn = get_db_connection()
+        cur = conn.cursor()
         cur.execute(
             "SELECT id FROM zeno.countries WHERE LOWER(name) = LOWER(%s)",
             (country_name.strip(),)
@@ -52,50 +67,64 @@ def get_country_id_by_name(country_name: str) -> int:
         cache[cache_key] = result[0]
         return result[0]
     finally:
-        cur.close()
-        release_db_connection(conn)
+        if conn is not None:
+            cur.close()
+            release_db_connection(conn)
 
-
-def get_crop_id_by_name(commodity: str) -> int:
-    """Fetch crop_id from zeno.crops by name."""
-    cache_key = f"crop_{commodity.lower()}"
+def get_product_id_by_name(product_name: str) -> int:
+    """Fetch product_id from zeno.products by name with flexible matching."""
+    cache_key = f"product_{product_name.lower()}"
     if cache_key in cache:
         return cache[cache_key]
-    
-    conn = get_db_connection()
-    cur = conn.cursor()
+
+    conn = None  
     try:
+        conn = get_db_connection()  
+        cur = conn.cursor()
         cur.execute(
-            "SELECT id FROM zeno.crops WHERE LOWER(name) = LOWER(%s)",
-            (commodity.strip(),)
+            "SELECT id FROM zeno.products WHERE LOWER(name) = LOWER(%s)",
+            (product_name.strip(),)
         )
         result = cur.fetchone()
-        if not result:
-            raise ValueError(f"Commodity '{commodity}' not found in zeno.crops.")
-        cache[cache_key] = result[0]
-        return result[0]
-    finally:
-        cur.close()
-        release_db_connection(conn)
+        if result:
+            cache[cache_key] = result[0]
+            return result[0]
+            
+        cur.execute(
+            "SELECT id FROM zeno.products WHERE LOWER(name) LIKE %s",
+            (f"%{product_name.strip().lower()}%",)
+        )
+        result = cur.fetchone()
+        if result:
+            cache[cache_key] = result[0]
+            return result[0]
 
+        raise ValueError(f"Product '{product_name}' not found in zeno.products.")
+    finally:
+        if conn is not None:  
+            cur.close()
+            release_db_connection(conn)
 
 def get_indicator_id_by_metric(metric: str) -> int:
     """
     Fetch indicator_id from zeno.indicators by matching metric name.
-    Assumes indicators have names like 'Gross Output (Agriculture)', 'Commodity Price', etc.
-    Uses fuzzy matching for user-friendly inputs.
+    Performs fuzzy matching for flexible user inputs.
     """
     cache_key = f"metric_{metric.lower()}"
     if cache_key in cache:
         return cache[cache_key]
-    
-    conn = get_db_connection()
-    cur = conn.cursor()
+
+    conn = None
     try:
+        conn = get_db_connection()
+        cur = conn.cursor()
         metric_mappings = {
-            "export_volume": ["gross output (agriculture)", "export volume"],
-            "price": ["commodity price", "price"],
-            "revenue": ["value added (agriculture)", "revenue"]
+            "export_volume": ["export volume", "gross output", "export quantity", "Exports"],
+            "quantity": ["quantity", "volume", "Exports"],        
+            "price": ["price", "commodity price", "Exports"],    
+            "revenue": ["revenue", "value added", "Exports"],    
+            "imports": ["import", "imports"],
+            "exports": ["export", "exports", "Exports"]
         }
         possible_names = metric_mappings.get(metric.lower(), [metric.lower()])
         for name in possible_names:
@@ -107,77 +136,132 @@ def get_indicator_id_by_metric(metric: str) -> int:
             if result:
                 cache[cache_key] = result[0]
                 return result[0]
+
         raise ValueError(
             f"Metric '{metric}' not found in zeno.indicators. "
-            "Ensure the indicators table includes relevant names (e.g., 'Gross Output (Agriculture)', 'Commodity Price')."
+            "Ensure relevant names exist (e.g., 'Commodity Price', 'Export Volume')."
         )
     finally:
-        cur.close()
-        release_db_connection(conn)
-
+        if conn is not None:
+            cur.close()
+            release_db_connection(conn)
 
 def get_trade_data_from_db(
     country_id: int,
-    crop_id: int,
+    product_id: int,
+    indicator_id: int,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+) -> pd.DataFrame:
+    """Fetch structured trade data from zeno.trade_data as a Pandas DataFrame."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        query = """
+            SELECT
+                td.date,
+                td.quantity,
+                td.price,
+                td.currency,
+                u.name as quantity_unit_name,
+                u.symbol as quantity_unit_symbol,
+                td.source,
+                td.metadata
+            FROM zeno.trade_data td
+            LEFT JOIN zeno.units u ON td.unit_id = u.id
+            WHERE td.country_id = %s
+              AND td.product_id = %s
+              AND td.indicator_id = %s
+        """
+        params = [country_id, product_id, indicator_id]
+        if start_date:
+            query += " AND td.date >= %s"
+            params.append(start_date)
+        if end_date:
+            query += " AND td.date <= %s"
+            params.append(end_date)
+        query += " ORDER BY td.date ASC"
+
+        cur.execute(query, params)
+        rows = cur.fetchall()
+        columns = [
+            "date", "quantity", "price", "currency", 
+            "quantity_unit_name", "quantity_unit_symbol", 
+            "source", "metadata"
+        ]
+        return pd.DataFrame(rows, columns=columns)
+    finally:
+        if conn is not None:
+            cur.close()
+            release_db_connection(conn)
+
+def get_macro_stats_from_db(
+    country_id: int,
     indicator_id: int,
     start_year: Optional[int] = None,
     end_year: Optional[int] = None
 ) -> pd.DataFrame:
-    """Fetch historical trade data from zeno.trade_data table."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    query = """
-        SELECT
-            td.year,
-            td.month,
-            td.value,
-            td.source,
-            td.metadata
-        FROM zeno.trade_data td
-        WHERE td.country_id = %s
-          AND td.product_id = %s
-          AND td.indicator_id = %s
-    """
-    params = [country_id, crop_id, indicator_id]
-    
-    if start_year:
-        query += " AND td.year >= %s"
-        params.append(start_year)
-    if end_year:
-        query += " AND td.year <= %s"
-        params.append(end_year)
-    
-    query += " ORDER BY td.year ASC, td.month ASC"
-    
+    """Fetch macroeconomic data from zeno.macro_stats as a Pandas DataFrame."""
+    conn = None
     try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        query = """
+            SELECT
+                ms.year,
+                ms.value,
+                ms.source,
+                ms.metadata
+            FROM zeno.macro_stats ms
+            WHERE ms.country_id = %s
+              AND ms.indicator_id = %s
+        """
+        params = [country_id, indicator_id]
+        if start_year:
+            query += " AND ms.year >= %s"
+            params.append(start_year)
+        if end_year:
+            query += " AND ms.year <= %s"
+            params.append(end_year)
+        query += " ORDER BY ms.year ASC"
+
         cur.execute(query, params)
         rows = cur.fetchall()
-        columns = ['year', 'month', 'value', 'source', 'metadata']
-        df = pd.DataFrame(rows, columns=columns)
-        return df
+        columns = ["year", "value", "source", "metadata"]
+        return pd.DataFrame(rows, columns=columns)
     finally:
-        cur.close()
-        release_db_connection(conn)
+        if conn is not None:
+            cur.close()
+            release_db_connection(conn)
 
-
-def query_rag_embeddings_semantic(query_embedding, top_k=5):
-    """Perform semantic similarity search using pgvector on zeno.rag_embeddings."""
-    conn = get_db_connection()
-    cur = conn.cursor()
+# SEMANTIC SEARCH
+def query_rag_embeddings_semantic(query_embedding, top_k: int = 10):
+    """
+    Perform semantic similarity search using pgvector on zeno.rag_embeddings.
+    Returns a list of dicts: [{'content': ..., 'source': ...}, ...]
+    """
+    conn = None
     try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        vector_str = encode_vector_for_postgres(query_embedding)
+
         cur.execute(
             """
-            SELECT content, source FROM zeno.rag_embeddings
+            SELECT content, source
+            FROM zeno.rag_embeddings
             ORDER BY embedding_vector <-> %s::vector
             LIMIT %s
             """,
-            (query_embedding, top_k)
+            (vector_str, top_k)
         )
         results = cur.fetchall()
         return [{"content": r[0], "source": r[1]} for r in results]
     except Exception as e:
-        print(f"Semantic search failed: {e}")
+        print(f"[Warning] Semantic search failed: {e}")
         return []
     finally:
-        cur.close()
-        release_db_connection(conn)
+        if conn is not None:
+            cur.close()
+            release_db_connection(conn)
