@@ -1,36 +1,39 @@
 import os
+from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 import traceback
 import numpy as np
-import google.generativeai as genai
+from google import genai
+
 import psycopg2
 from sqlalchemy import create_engine, text
+load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 if not DATABASE_URL:
     raise RuntimeError(
-        "DATABASE_URL is not set! Please ensure it is set in your environment."
+        "DATABASE_URL is not set! Please ensure .env exists in your project root and contains a valid DATABASE_URL line."
     )
 if not GOOGLE_API_KEY:
     raise RuntimeError(
-        "GOOGLE_API_KEY is not set! Please ensure it is set in your environment."
+        "GOOGLE_API_KEY is not set! Please ensure .env exists in your project root and contains a valid GOOGLE_API_KEY line."
     )
 
 engine = create_engine(DATABASE_URL)
+client = genai.Client(api_key=GOOGLE_API_KEY)
 
 def get_text_embedding(text: str) -> Optional[List[float]]:
     """
-    Returns a list embedding for a string using Gemini Embeddings API (v0.8.5 syntax).
+    Returns a list embedding for a string using Gemini Embeddings API.
     """
     try:
-        genai.configure(api_key=GOOGLE_API_KEY)
         res = genai.embed_content(
             model="models/text-embedding-004",
             content=text,
-            task_type="retrieval_document",
+            task_type="retrieval_document"
         )
         return res["embedding"]
     except Exception as e:
@@ -44,11 +47,9 @@ def embed_text(text: str) -> Optional[List[float]]:
     Returns a list of floats (the embedding vector), or None on error.
     """
     try:
-        genai.configure(api_key=GOOGLE_API_KEY)
         response = genai.embed_content(
             model="models/text-embedding-004",
-            content=text,
-            task_type="retrieval_document",
+            content=text
         )
         embedding = response["embedding"]
         return embedding
