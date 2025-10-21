@@ -69,3 +69,11 @@ def ask_knowledgebase(query: str, top_k: int = 5) -> List[Dict[str, str]]:
     except Exception as e:
         print(f"[Warning] RAG query failed: {e}")
         return [{"content": f"RAG query failed: {str(e)}", "source": "N/A"}]
+
+def ask_knowledgebase_with_context(query: str, file_context: str = "", top_k: int = 5) -> str:
+    base_results = ask_knowledgebase(query, top_k)
+    if not file_context:
+        return base_results[0]["content"] if base_results else "No info found."
+    
+    summary = summarize_chunk(file_context, query)
+    return f"Uploaded document: {summary}\n\nKnowledge base: {base_results[0]['content']}"
