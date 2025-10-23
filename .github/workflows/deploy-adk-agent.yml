@@ -3,7 +3,7 @@ name: Deploy Zeno Agent to Cloud Run
 on:
   push:
     branches:
-      - feature/zeno-fix-endpoint
+      - feature/zeno-fix-end
 
 jobs:
   build-and-deploy:

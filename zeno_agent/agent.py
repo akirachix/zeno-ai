@@ -2,7 +2,6 @@
 import os
 from dotenv import load_dotenv
 load_dotenv()
-
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from google import genai
@@ -77,7 +76,7 @@ async def query(request: Request):
 
         if file_context and not user_query:
             prompt = f"""
-You are Dr. Zeno, Senior Economist. A user uploaded a document but didn't ask a specific question.
+You are Zeno, Senior Economist. A user uploaded a document but didn't ask a specific question.
 
 Document:
 {file_context[:4000]}
