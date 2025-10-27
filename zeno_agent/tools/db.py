@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 import traceback
 import numpy as np
-from google import genai
+import google.generativeai as genai
 
 import psycopg2
 from sqlalchemy import create_engine, text

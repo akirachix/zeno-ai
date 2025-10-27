@@ -1,113 +1,169 @@
 import os
+import time
 import json
+import hashlib
+from typing import Dict, Any, Optional, Tuple
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from google import genai
-from zeno_agent.tools.db import get_trade_data, semantic_search_rag_embeddings
-from zeno_agent.agents.forecasting import ForecastingAgent
-from zeno_agent.agents.forecasting.forecasting_agent import ForecastingAgent
-from zeno_agent.rag_tools import ask_knowledgebase
+from fastapi.concurrency import run_in_threadpool
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from zeno_agent.agents.comparative.comparative_agent import comparative_agent
+from zeno_agent.agents.forecasting.forecasting_agent import ForecastingAgent
 from zeno_agent.agents.scenario.scenario_agent import ScenarioSubAgent
+from zeno_agent.rag_tools import ask_knowledgebase
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
-    raise EnvironmentError("GOOGLE_API_KEY environment variable is not set.")
+    print("⚠️  Warning: GOOGLE_API_KEY not set.")
 
-client = genai.Client(api_key=GOOGLE_API_KEY)
+CACHE_TTL_SECONDS = 600  
+_cache: Dict[str, Tuple[float, Any]] = {}
 
-def route_and_reason(user_query: str) -> dict:
-    """
-     Gemini LLM fully reason about the query.
-    It decides:
-    - type: trivial / comparative / forecast / scenario / rag
-    - trivial queries are answered directly by LLM
-    Returns dict {"type": ..., "response": ...}
-    """
-    prompt = f"""
-       You are Zeno, an AI Economist Assistant specializing in East African agricultural trade data.
+def _make_cache_key(prefix: str, query: str) -> str:
+    h = hashlib.sha256(query.lower().encode("utf-8")).hexdigest()[:16]
+    return f"{prefix}::{h}"
 
-      Your task:
-      1. Analyze the user's query.
-      2. If it is a greeting, small talk, or simple factual question unrelated to trade data (e.g., "Hello", "What is the date today?"),
-     answer it naturally.
-       3. If it is about comparing countries/commodities → indicate [COMPARATIVE] at the start of your response.
-         4. If it is asking for a forecast or prediction → indicate [FORECAST].
-         5. If it is a hypothetical or what-if scenario → indicate [SCENARIO].
-         6. If it requires document retrieval or knowledge lookup or understanding of trade atmosphere in Eastern Africa → indicate [RAG].
+def cache_get(key: str) -> Optional[Any]:
+    entry = _cache.get(key)
+    if not entry:
+        return None
+    ts, value = entry
+    if time.time() - ts > CACHE_TTL_SECONDS:
+        _cache.pop(key, None)
+        return None
+    return value
 
-         Do not output JSON. Just respond naturally or with the tags above.
+def cache_set(key: str, value: Any) -> None:
+    _cache[key] = (time.time(), value)
 
-         Query: "{user_query}"
-        """
+def lightweight_route(user_query: str) -> Dict[str, Any]:
+    q = user_query.lower().strip()
+    if not q:
+        return {"type": "trivial", "response": "Hello! How can I help with East African trade data?"}
 
-    try:
-        result = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt
-        )
-        raw_output = result.text.strip()
+    trivial_stopwords = {"hello", "hi", "hey", "thanks", "thank", "date", "time"}
 
-        if raw_output.startswith("[COMPARATIVE]"):
-            return {"type": "comparative", "response": ""}
-        elif raw_output.startswith("[FORECAST]"):
-            return {"type": "forecast", "response": ""}
-        elif raw_output.startswith("[SCENARIO]"):
-            return {"type": "scenario", "response": ""}
-        elif raw_output.startswith("[RAG]"):
-            return {"type": "rag", "response": ""}
-        else:
-            return {"type": "trivial", "response": raw_output}
+    if len(q.split()) <= 4 and any(w in q for w in trivial_stopwords):
+        return {"type": "trivial", "response": "Hello! I specialize in East African agricultural trade. How can I help?"}
 
-    except Exception as e:
-        print(f" LLM call failed: {e}")
-        query = user_query.lower()
-        trade_keywords = {"export", "import", "price", "trade", "coffee", "maize", "tanzania", "kenya", "forecast", "compare"}
-        if len(query.split()) <= 6 and not any(key_word in query for key_word in trade_keywords):
-            return {"type": "trivial", "response": "Hello! I specialize in East African agricultural trade data. How can I help?"}
-        return {"type": "rag", "response": ""}
+    if any(k in q for k in ["compare", "vs", "versus", "difference", "between", "compared"]):
+        return {"type": "comparative", "response": ""}
 
-# FASTAPI APP
+    if any(k in q for k in ["forecast", "predict", "projection", "trend", "next", "quarter"]):
+        return {"type": "forecast", "response": ""}
+
+    if any(k in q for k in ["what if", "what happens","scenario", "increase", "decrease", "drop", "shock", "if"]):
+        return {"type": "scenario", "response": ""}
+
+    return {"type": "rag", "response": ""}
+
+def route_and_reason(user_query: str) -> Dict[str, Any]:
+    return lightweight_route(user_query)
+
 app = FastAPI()
 
+async def handle_user_query(user_query: str) -> Dict[str, Any]:
+    start = time.time()
+    routed = route_and_reason(user_query)
+    routing_time = time.time() - start
+
+    qtype = routed.get("type", "rag")
+    trivial_response = routed.get("response", "")
+
+    if qtype == "trivial" and trivial_response:
+        return {
+            "type": "trivial",
+            "answer": trivial_response,
+            "context": None,
+            "sources": [],
+            "timings": {"routing": routing_time, "total": time.time() - start}
+        }
+
+    cache_key = _make_cache_key(qtype, user_query)
+    cached = cache_get(cache_key)
+    if cached:
+        cached["timings"] = {"routing": routing_time, "cached": True, "total": time.time() - start}
+        return cached
+
+    if qtype == "comparative":
+        t0 = time.time()
+        try:
+            result = await run_in_threadpool(comparative_agent.run, {"query": user_query})
+        except TypeError:
+            result = await run_in_threadpool(comparative_agent.run, user_query)
+        elapsed = time.time() - t0
+        response = {
+            "type": "comparative",
+            "answer": result.get("analysis") or result.get("response") or str(result),
+            "data": result,
+            "sources": result.get("sources", []),
+            "timings": {"routing": routing_time, "execution": elapsed, "total": time.time() - start}
+        }
+        cache_set(cache_key, response)
+        return response
+
+    elif qtype == "forecast":
+        t0 = time.time()
+        forecasting_agent = ForecastingAgent()
+        result = await run_in_threadpool(forecasting_agent.run, {"query": user_query})
+        elapsed = time.time() - t0
+        human_answer = result.get("reasoning") or result.get("explanation") or result.get("response", "")
+        response = {
+            "type": "forecast",
+            "answer": human_answer,
+            "data": result,
+            "sources": result.get("sources", []),
+            "timings": {"routing": routing_time, "execution": elapsed, "total": time.time() - start}
+        }
+        cache_set(cache_key, response)
+        return response
+
+    elif qtype == "scenario":
+        t0 = time.time()
+        result = await run_in_threadpool(ScenarioSubAgent().handle, user_query)
+        elapsed = time.time() - t0
+        response = {
+            "type": "scenario",
+            "answer": result.get("response") or result.get("explanation") or str(result),
+            "data": result,
+            "sources": [result.get("source")] if result.get("source") else [],
+            "timings": {"routing": routing_time, "execution": elapsed, "total": time.time() - start}
+        }
+        cache_set(cache_key, response)
+        return response
+
+    else:  
+        t0 = time.time()
+        rag_text = await run_in_threadpool(ask_knowledgebase, user_query)
+        elapsed = time.time() - t0
+        response = {
+            "type": "rag",
+            "answer": rag_text,
+            "data": {"response": rag_text},
+            "sources": [],
+            "timings": {"routing": routing_time, "execution": elapsed, "total": time.time() - start}
+        }
+        cache_set(cache_key, response)
+        return response
+
 @app.post("/query")
-async def query(request: Request):
-    data = await request.json()
-    user_query = data.get("query", "").strip()
-    if not user_query:
+async def query_endpoint(request: Request):
+    payload = await request.json()
+    q = payload.get("query", "")
+    if not isinstance(q, str):
+        q = str(q) if q is not None else ""
+    q = q.strip()
+    if not q:
         return JSONResponse({"error": "Query is required"}, status_code=400)
-
     try:
-        routed = route_and_reason(user_query)
-        query_type = routed.get("type", "rag")
-        trivial_response = routed.get("response", "")
-
-        if query_type == "trivial" and trivial_response:
-            return JSONResponse({"type": "trivial", "response": trivial_response})
-
-        elif query_type == "comparative":
-             result = comparative_agent.run({"query": user_query})
-             return JSONResponse(result)
-
-
-        
-        elif query_type == "forecast":
-            forecasting_agent = ForecastingAgent()
-            result = forecasting_agent.run({"query": user_query})
-            return JSONResponse({"type": "forecast", **result})
-
-        elif query_type == "scenario":
-            result = ScenarioSubAgent().handle(user_query)
-            return JSONResponse({"type": "scenario", **result})
-
-        else:
-            response = ask_knowledgebase(user_query)
-            return JSONResponse({"type": "rag", "response": response})
-
+        result = await handle_user_query(q)
+        return JSONResponse(result)
     except Exception as e:
-        return JSONResponse({"error": f"Processing failed: {str(e)}"}, status_code=500)
+        return JSONResponse({"error": str(e)}, status_code=500)
 
-# HEALTH CHECK
 @app.get("/healthz")
 def health():
     return {"status": "ok"}
