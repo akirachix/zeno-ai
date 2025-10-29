@@ -32,6 +32,7 @@ class ForecastingAgent:
 
     def run(self, inputs):
         query = inputs.get("query", "")
+        file_context = inputs.get("file_context", "")
         if not query:
             return {"error": "No query provided."}
 

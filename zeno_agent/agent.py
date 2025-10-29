@@ -1,4 +1,3 @@
-
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -11,7 +10,7 @@ import traceback
 from zeno_agent.agents.comparative.comparative_agent import comparative_agent
 from zeno_agent.agents.forecasting.forecasting_agent import ForecastingAgent
 from zeno_agent.agents.scenario.scenario_agent import ScenarioSubAgent
-from zeno_agent.rag_tools import ask_knowledgebase
+from zeno_agent.rag_tools import ask_knowledgebase_with_context 
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
@@ -76,13 +75,17 @@ async def query(request: Request):
             return JSONResponse({"error": "Query or file is required"}, status_code=400)
 
         if file_context and not user_query:
+
             prompt = f"""
 You are Dr. Zeno, Senior Economist. A user uploaded a document but didn't ask a specific question.
+Your primary role is to ensure the user gets value from their uploaded file.
 
-Document:
-{file_context[:4000]}
+Document Context (includes filename and content):
+{file_context}
 
-Summarize it in 1–2 sentences, then suggest 3 specific, actionable questions about economic implications.
+Instructions:
+1. Provide a brief, professional 1-2 sentence summary of the main topic or data presented in the uploaded documents.
+2. Suggest 3 specific, actionable economic questions based on the document content that an economist would be interested in.
 """
             try:
                 response = client.models.generate_content(
@@ -125,11 +128,8 @@ Summarize it in 1–2 sentences, then suggest 3 specific, actionable questions a
 
         else:  
 
-            base_response = ask_knowledgebase(user_query)
-            if file_context:
-                combined = f"Uploaded document:\n{file_context[:1000]}\n\nKnowledge base:\n{base_response[0]['content'] if base_response else 'No info'}"
-                return JSONResponse({"type": "rag", "response": combined})
-            return JSONResponse({"type": "rag", "response": base_response[0]["content"] if base_response else "No relevant information found."})
+            base_response = ask_knowledgebase_with_context(user_query, file_context)
+            return JSONResponse({"type": "rag", "response": base_response})
 
     except Exception as e:
         error_msg = f"Processing failed: {str(e)}"
