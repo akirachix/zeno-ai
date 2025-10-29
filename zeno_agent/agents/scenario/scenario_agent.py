@@ -39,8 +39,7 @@ class ScenarioSubAgent:
             print(f"[Scenario] RAG error: {e}")
         return "No relevant policy, macroeconomic, or event documents found."
 
-    def handle(self, scenario_query: str) -> dict:
-        """Main method: processes scenario queries into economic analysis."""
+    def handle_with_context(self, scenario_query: str, file_context: str = "") -> dict:
         query = scenario_query.strip()
         commodity, country = self.extract_entities(query)
 
@@ -48,26 +47,49 @@ class ScenarioSubAgent:
             return {
                 "type": "scenario",
                 "query": query,
-                "response": (
-                    "Please specify a commodity (e.g., coffee, maize) and country (e.g., Kenya, Rwanda)."
-                ),
+                "response": "Please specify a commodity (e.g., coffee, maize) and country (e.g., Kenya, Rwanda).",
                 "followup": "Example: 'What if Kenya subsidizes coffee production?'",
             }
 
         structured_context = build_structured_context(commodity, country)
         rag_context = self.get_rag_context(query)
-        prompt = build_scenario_prompt(query, structured_context, rag_context)
+    
 
+        context_parts = []
+        if file_context:
+            context_parts.append(f"Uploaded document:\n{file_context}")
+        if structured_context:
+            context_parts.append(f"Structured Economic Data: {structured_context}")
+        if rag_context:
+            context_parts.append(f"Policy/Documents: {rag_context}")
+    
+        full_context = "\n\n".join(context_parts)
+
+        prompt = f"""
+    You are Dr. Zeno, Senior Economist at the East African Trade Institute.
+    Write a detailed professional plain text economic analysis.
+
+    Scenario Query: "{query}"
+
+    Available Context:
+    {full_context}
+
+    Instructions:
+    - Use clear, formal economic language.
+    - Organize into short, readable paragraphs (no markdown).
+    - Discuss: Immediate Effects, Price Dynamics, Trade Effects, Macroeconomic Implications, Risks.
+    - Base reasoning on the data provided.
+    - Keep it 250-300 words.
+    - Output plain text only.
+    """
         try:
             response = self.client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
             analysis = response.text.strip()
         except Exception as e:
-            print(f"[Scenario] LLM fallback: {e}")
             analysis = (
-                f"A {commodity} policy in {country.title()} would affect production, prices, and trade. "
-                f"Elasticity effects suggest that higher supply would reduce domestic prices but increase export volumes. "
-                f"Fiscal costs and trade balance implications should be considered. "
-                f"Targeted interventions and monitoring are recommended."
+                f"A {commodity} policy in {country.title()} would affect production and trade. "
+                f"Elasticity effects suggest higher supply reduces domestic prices but increases exports. "
+                f"Fiscal and trade balance implications should be considered."
             )
 
         return {
@@ -75,7 +97,5 @@ class ScenarioSubAgent:
             "query": query,
             "entities": {"commodity": commodity, "country": country},
             "llm_analysis": analysis,
-            "followup": (
-                "Try adjusting policy parameters, commodities, or macroeconomic assumptions for a deeper scenario."
-            ),
+            "followup": "Try adjusting policy parameters or macroeconomic assumptions."
         }

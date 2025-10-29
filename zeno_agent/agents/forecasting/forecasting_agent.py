@@ -32,6 +32,7 @@ class ForecastingAgent:
 
     def run(self, inputs):
         query = inputs.get("query", "")
+        file_context = inputs.get("file_context", "")
         if not query:
             return {"error": "No query provided."}
 
@@ -58,7 +59,7 @@ class ForecastingAgent:
             f"Volume: {dual_forecast['volume_kg']:.0f} {vol_unit}"
         )
 
-        # Interpretation
+
         prompt = f"""
         Interpret this forecast professionally for economists.
         No markdown, no bullets, just structured paragraphs.
@@ -69,6 +70,7 @@ class ForecastingAgent:
         Total Revenue: {dual_forecast['total_revenue']['forecast']:.0f} {currency}
         Volume: {dual_forecast['volume_kg']:.0f} {vol_unit}
         Context: {rag_context}
+        {"Additional document context: " + file_context if file_context else ""}
         """
 
         try:

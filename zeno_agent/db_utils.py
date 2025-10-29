@@ -22,7 +22,6 @@ register_adapter(np.ndarray, adapt_vector)
 register_adapter(list, adapt_vector)
 
 
-# DATABASE CONNECTION MANAGEMENT
 def init_db_pool():
     """Initialize database connection pool."""
     global db_pool
@@ -235,7 +234,6 @@ def get_macro_stats_from_db(
             cur.close()
             release_db_connection(conn)
 
-# SEMANTIC SEARCH
 def query_rag_embeddings_semantic(query_embedding, top_k: int = 10):
     """
     Perform semantic similarity search using pgvector on zeno.rag_embeddings.
