@@ -1,6 +1,5 @@
 import os
 import time
-import json
 import hashlib
 from typing import Dict, Any, Optional, Tuple
 from fastapi import FastAPI, Request
@@ -17,7 +16,7 @@ from zeno_agent.rag_tools import ask_knowledgebase
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
-    print("⚠️  Warning: GOOGLE_API_KEY not set.")
+    print("Warning: GOOGLE_API_KEY not set.")
 
 CACHE_TTL_SECONDS = 600  
 _cache: Dict[str, Tuple[float, Any]] = {}
@@ -63,6 +62,14 @@ def lightweight_route(user_query: str) -> Dict[str, Any]:
 def route_and_reason(user_query: str) -> Dict[str, Any]:
     return lightweight_route(user_query)
 
+def detect_output_format(query: str) -> Dict[str, bool]:
+    q = query.lower()
+    return {
+        "include_chart": any(word in q for word in ["chart", "graph", "plot", "visual", "figure", "show.*trend"]),
+        "include_csv": any(word in q for word in ["csv", "download", "export", "spreadsheet", "data", "table", "dataset"]),
+        "include_excel": any(word in q for word in ["excel", "xlsx", "sheet"])
+    }
+
 app = FastAPI()
 
 async def handle_user_query(user_query: str) -> Dict[str, Any]:
@@ -88,6 +95,8 @@ async def handle_user_query(user_query: str) -> Dict[str, Any]:
         cached["timings"] = {"routing": routing_time, "cached": True, "total": time.time() - start}
         return cached
 
+    output_format = detect_output_format(user_query)
+
     if qtype == "comparative":
         t0 = time.time()
         try:
@@ -110,11 +119,75 @@ async def handle_user_query(user_query: str) -> Dict[str, Any]:
         forecasting_agent = ForecastingAgent()
         result = await run_in_threadpool(forecasting_agent.run, {"query": user_query})
         elapsed = time.time() - t0
+
         human_answer = result.get("reasoning") or result.get("explanation") or result.get("response", "")
+        
+        django_response = {
+            "type": "forecast",
+            "response": human_answer,
+            "forecast_display": result.get("forecast_value", "N/A"),
+            "interpretation": human_answer,
+            "confidence_level": result.get("confidence", "Medium"),
+            "data_points_used": result.get("data_points", 0),
+        }
+
+        if output_format["include_chart"] and "forecast_series" in result:
+            periods = len(result["forecast_series"])
+            labels = [f"Month {i+1}" for i in range(periods)]
+            metric = result.get("metric", "value")
+            commodity = result.get("commodity", "commodity")
+            country = result.get("country", "country")
+            
+            chart_spec = {
+                "type": "line",
+                "data": {
+                    "labels": labels,
+                    "datasets": [{
+                        "label": f"{metric.title()} Forecast",
+                        "data": [float(x) for x in result["forecast_series"]],
+                        "borderColor": "rgb(54, 162, 235)",
+                        "tension": 0.3,
+                        "fill": False
+                    }]
+                },
+                "options": {
+                    "responsive": True,
+                    "plugins": {
+                        "title": {
+                            "display": True,
+                            "text": f"{commodity.title()} {metric.title()} in {country.title()}"
+                        }
+                    }
+                }
+            }
+            django_response["chart"] = chart_spec
+
+        if (output_format["include_csv"] or output_format["include_excel"]) and "forecast_series" in result:
+            csv_rows = []
+            for i, val in enumerate(result["forecast_series"]):
+                csv_rows.append({
+                    "period": f"Month {i+1}",
+                    "value": float(val),
+                    "commodity": result.get("commodity", "unknown"),
+                    "country": result.get("country", "unknown"),
+                    "metric": result.get("metric", "unknown")
+                })
+            if output_format["include_csv"]:
+                django_response["csv_data"] = csv_rows
+            if output_format["include_excel"]:
+                django_response["excel_data"] = csv_rows
+
+        django_response["thought_process"] = [
+            f"Retrieved data for {result.get('commodity', 'commodity')} in {result.get('country', 'country')}",
+            f"Used {result.get('model_used', 'Ensemble')} model",
+            f"Processed {result.get('data_points', 0)} data points"
+        ]
+        django_response["followup"] = f"Need this as a different format for {result.get('country', 'your region')}?"
+
         response = {
             "type": "forecast",
             "answer": human_answer,
-            "data": result,
+            "data": django_response,
             "sources": result.get("sources", []),
             "timings": {"routing": routing_time, "execution": elapsed, "total": time.time() - start}
         }
@@ -135,7 +208,7 @@ async def handle_user_query(user_query: str) -> Dict[str, Any]:
         cache_set(cache_key, response)
         return response
 
-    else:  
+    else: 
         t0 = time.time()
         rag_text = await run_in_threadpool(ask_knowledgebase, user_query)
         elapsed = time.time() - t0
