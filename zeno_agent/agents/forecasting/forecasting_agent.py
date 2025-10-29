@@ -194,6 +194,11 @@ class ForecastingAgent:
             if not isinstance(query_text, str):
                 query_text = str(query_text)
 
+            q_lower = query_text.lower()
+            include_chart = any(word in q_lower for word in ["chart", "graph", "plot", "visual", "figure", "show.*trend"])
+            include_csv = any(word in q_lower for word in ["csv", "download", "export", "spreadsheet", "data", "table", "dataset"])
+            include_excel = any(word in q_lower for word in ["excel", "xlsx", "sheet"])
+
             commodity = params.get("commodity")
             metric = params.get("metric") 
             country = params.get("country")
@@ -263,12 +268,81 @@ class ForecastingAgent:
                 indicator_id=indicator_id,
                 start_date="2015-01-01"
             )
-            if df is None or df.empty:
-                return {
-                    "error": f"No historical data found for {commodity} {metric} in {country}.",
-                    "debug": {"country_id": country_id, "product_id": product_id, "indicator_id": indicator_id},
-                    "timings": {"total_seconds": time.time() - run_start}
+            
+            has_real_data = df is not None and not df.empty
+            if not has_real_data:
+                print(f"⚠️ No real data for {commodity} in {country}. Using DUMMY data for chart only.")
+                
+                np.random.seed(42)  
+                base_value = 120.0 if metric == "price" else 5000.0
+                
+                forecast_series = []
+                for i in range(months):
+                    trend = base_value * (1 + 0.02 * i/12) 
+                    noise = np.random.normal(0, base_value * 0.05) 
+                    forecast_series.append(float(trend + noise))
+                
+                result = {
+                    "forecast_value": f"${np.mean(forecast_series):.2f}/kg" if metric == "price" else f"{np.mean(forecast_series):,.0f} tons",
+                    "confidence": "Low",
+                    "reasoning": f"⚠️ No real data found for {commodity} {metric} in {country}. Showing simulated forecast for demonstration purposes only.",
+                    "model_used": "Dummy",
+                    "forecast_series": forecast_series,
+                    "rag_context": [],
+                    "metrics": {},
+                    "data_points": 0,
+                    "has_real_data": False
                 }
+                
+                if include_chart:
+                    labels = [f"Month {i+1}" for i in range(months)]
+                    chart_spec = {
+                        "type": "line",
+                        "data": {
+                            "labels": labels,
+                            "datasets": [{
+                                "label": f"{metric.title()} Forecast",
+                                "data": [float(x) for x in forecast_series],
+                                "borderColor": "rgb(54, 162, 235)",
+                                "tension": 0.3,
+                                "fill": False
+                            }]
+                        },
+                        "options": {
+                            "responsive": True,
+                            "plugins": {
+                                "title": {
+                                    "display": True,
+                                    "text": f"{commodity.title()} {metric.title()} in {country.title()}"
+                                }
+                            }
+                        }
+                    }
+                    result["chart"] = chart_spec
+
+                if include_csv or include_excel:
+                    csv_rows = []
+                    for i, val in enumerate(forecast_series):
+                        csv_rows.append({
+                            "period": f"Month {i+1}",
+                            "value": float(val),
+                            "commodity": commodity or "commodity",
+                            "country": country or "country",
+                            "metric": metric or "metric"
+                        })
+                    if include_csv:
+                        result["csv_data"] = csv_rows
+                    if include_excel:
+                        result["excel_data"] = csv_rows
+
+                result["thought_process"] = [
+                    f"⚠️ No real data for {commodity} in {country}",
+                    "Showing simulated forecast for demonstration purposes only"
+                ]
+                result["followup"] = f"Would you like to try another commodity in {country.title()}?"
+
+                result["timings"] = {"total_seconds": time.time() - run_start}
+                return result
 
             df = df.copy()
             df['ds'] = pd.to_datetime(df['date'])
@@ -374,82 +448,62 @@ class ForecastingAgent:
                 "forecast_series": forecast_series,
                 "rag_context": rag_context,
                 "metrics": {},
-                "data_points": len(df_proc)
+                "data_points": len(df_proc),
+                "has_real_data": True
             }
+
+            if include_chart:
+                labels = [f"Month {i+1}" for i in range(months)]
+                chart_spec = {
+                    "type": "line",
+                    "data": {
+                        "labels": labels,
+                        "datasets": [{
+                            "label": f"{metric.title()} Forecast",
+                            "data": [float(x) for x in forecast_series],
+                            "borderColor": "rgb(54, 162, 235)",
+                            "tension": 0.3,
+                            "fill": False
+                        }]
+                    },
+                    "options": {
+                        "responsive": True,
+                        "plugins": {
+                            "title": {
+                                "display": True,
+                                "text": f"{commodity.title()} {metric.title()} in {country.title()}"
+                            }
+                        }
+                    }
+                }
+                result["chart"] = chart_spec
+
+            if include_csv or include_excel:
+                csv_rows = []
+                for i, val in enumerate(forecast_series):
+                    csv_rows.append({
+                        "period": f"Month {i+1}",
+                        "value": float(val),
+                        "commodity": commodity,
+                        "country": country,
+                        "metric": metric
+                    })
+                if include_csv:
+                    result["csv_data"] = csv_rows
+                if include_excel:
+                    result["excel_data"] = csv_rows
+
+            result["thought_process"] = [
+                f"Retrieved data for {commodity} in {country}",
+                f"Used {model_choice} model",
+                f"Processed {len(df_proc)} data points"
+            ]
+            result["followup"] = f"Would you like this in another format for {country.title()}?"
 
             cache_set_result(result_key, result)
             result["timings"] = {"total_seconds": time.time() - run_start}
             return result
 
-    def parse_timeframe(self, timeframe: str) -> int:
-        import re
-        match = re.match(r"next (\d+) (year|years|month|months)", timeframe.lower())
-        if not match:
-            return 3
-        num, unit = int(match.group(1)), match.group(2)
-        return num if "month" in unit else num * 12
-
-    def forecast_dual_metrics(self, df, periods: int):
-        unit_df = df[["ds", "unit_price"]].rename(columns={"unit_price": "y"})
-        unit_forecast, unit_ints, unit_model = run_model(unit_df, periods, "unit_price")
-
-        rev_df = df[["ds", "price"]].rename(columns={"price": "y"})
-        rev_forecast, rev_ints, rev_model = run_model(rev_df, periods, "revenue")
-
-        vol_df = df[["ds", "quantity_kg"]].rename(columns={"quantity_kg": "y"})
-        vol_forecast, _, _ = run_model(vol_df, periods, "volume")
-
-        return {
-            "unit_price": {"forecast": np.mean(unit_forecast), "intervals": unit_ints, "model": unit_model},
-            "total_revenue": {"forecast": np.mean(rev_forecast), "intervals": rev_ints, "model": rev_model},
-            "volume_kg": np.mean(vol_forecast),
-        }
-
-    def run(self, inputs):
-        query = inputs.get("query", "")
-        if not query:
-            return {"error": "No query provided."}
-
-        q = query.lower()
-        commodity = next((k for k in ALIAS_MAP if k in q), None)
-        country = next((c for c in SUPPORTED_COUNTRIES if c in q), None)
-        timeframe = "next 3 months" if "month" in q else "next 1 year"
-
-        if not commodity or not country:
-            return {"error": "Could not identify commodity or country."}
-
-        commodity = ALIAS_MAP[commodity]
-        country_id = get_country_id_by_name(country.title())
-        product_id = get_product_id_by_name(commodity)
-        df, currency, vol_unit, symbol = prepare_dual_data(country_id, product_id)
-        rag_context = get_enhanced_rag_context(commodity, country, "price")
-
-        periods = self.parse_timeframe(timeframe)
-        dual_forecast = self.forecast_dual_metrics(df, periods)
-
-        display_text = (
-            f"Unit Price: {dual_forecast['unit_price']['forecast']:.2f} {currency}/kg | "
-            f"Revenue: {dual_forecast['total_revenue']['forecast']:.0f} {currency} | "
-            f"Volume: {dual_forecast['volume_kg']:.0f} {vol_unit}"
-        )
-
-
-        prompt = f"""
-        Interpret this forecast professionally for economists.
-        No markdown, no bullets, just structured paragraphs.
-
-        Commodity: {commodity}
-        Country: {country}
-        Unit Price: {dual_forecast['unit_price']['forecast']:.2f} {currency}/kg
-        Total Revenue: {dual_forecast['total_revenue']['forecast']:.0f} {currency}
-        Volume: {dual_forecast['volume_kg']:.0f} {vol_unit}
-        Context: {rag_context}
-        {"Additional document context: " + file_context if file_context else ""}
-        """
-
-        try:
-            response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
-            interpretation = re.sub(r"[\*\#\-\_\<\>\/]+", "", response.text).strip()
         except Exception as e:
             return {
                 "error": str(e),
