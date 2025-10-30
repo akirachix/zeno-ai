@@ -1,6 +1,5 @@
 import os
 import time
-import json
 import hashlib
 from typing import Dict, Any, Optional, Tuple
 from fastapi import FastAPI, Request
@@ -17,7 +16,7 @@ from zeno_agent.rag_tools import ask_knowledgebase
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if not GOOGLE_API_KEY:
-    print("⚠️  Warning: GOOGLE_API_KEY not set.")
+    print("Warning: GOOGLE_API_KEY not set.")
 
 CACHE_TTL_SECONDS = 600  
 _cache: Dict[str, Tuple[float, Any]] = {}
@@ -63,6 +62,14 @@ def lightweight_route(user_query: str) -> Dict[str, Any]:
 def route_and_reason(user_query: str) -> Dict[str, Any]:
     return lightweight_route(user_query)
 
+def detect_output_format(query: str) -> Dict[str, bool]:
+    q = query.lower()
+    return {
+        "include_chart": any(word in q for word in ["chart", "graph", "plot", "visual", "figure", "show.*trend"]),
+        "include_csv": any(word in q for word in ["csv", "download", "export", "spreadsheet", "data", "table", "dataset"]),
+        "include_excel": any(word in q for word in ["excel", "xlsx", "sheet"])
+    }
+
 app = FastAPI()
 
 async def handle_user_query(user_query: str) -> Dict[str, Any]:
@@ -88,6 +95,8 @@ async def handle_user_query(user_query: str) -> Dict[str, Any]:
         cached["timings"] = {"routing": routing_time, "cached": True, "total": time.time() - start}
         return cached
 
+    output_format = detect_output_format(user_query)
+
     if qtype == "comparative":
         t0 = time.time()
         try:
@@ -110,11 +119,22 @@ async def handle_user_query(user_query: str) -> Dict[str, Any]:
         forecasting_agent = ForecastingAgent()
         result = await run_in_threadpool(forecasting_agent.run, {"query": user_query})
         elapsed = time.time() - t0
-        human_answer = result.get("reasoning") or result.get("explanation") or result.get("response", "")
+
+        if "error" in result:
+            return {
+                "type": "forecast",
+                "answer": result["error"],
+                "data": {"error": result["error"]},
+                "sources": [],
+                "timings": {"routing": routing_time, "execution": elapsed, "total": time.time() - start}
+            }
+
+        human_answer = result.get("response", "Forecast generated.")
+        
         response = {
             "type": "forecast",
             "answer": human_answer,
-            "data": result,
+            "data": result, 
             "sources": result.get("sources", []),
             "timings": {"routing": routing_time, "execution": elapsed, "total": time.time() - start}
         }
@@ -135,7 +155,7 @@ async def handle_user_query(user_query: str) -> Dict[str, Any]:
         cache_set(cache_key, response)
         return response
 
-    else:  
+    else: 
         t0 = time.time()
         rag_text = await run_in_threadpool(ask_knowledgebase, user_query)
         elapsed = time.time() - t0
