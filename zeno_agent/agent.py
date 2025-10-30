@@ -120,74 +120,21 @@ async def handle_user_query(user_query: str) -> Dict[str, Any]:
         result = await run_in_threadpool(forecasting_agent.run, {"query": user_query})
         elapsed = time.time() - t0
 
-        human_answer = result.get("reasoning") or result.get("explanation") or result.get("response", "")
-        
-        django_response = {
-            "type": "forecast",
-            "response": human_answer,
-            "forecast_display": result.get("forecast_value", "N/A"),
-            "interpretation": human_answer,
-            "confidence_level": result.get("confidence", "Medium"),
-            "data_points_used": result.get("data_points", 0),
-        }
-
-        if output_format["include_chart"] and "forecast_series" in result:
-            periods = len(result["forecast_series"])
-            labels = [f"Month {i+1}" for i in range(periods)]
-            metric = result.get("metric", "value")
-            commodity = result.get("commodity", "commodity")
-            country = result.get("country", "country")
-            
-            chart_spec = {
-                "type": "line",
-                "data": {
-                    "labels": labels,
-                    "datasets": [{
-                        "label": f"{metric.title()} Forecast",
-                        "data": [float(x) for x in result["forecast_series"]],
-                        "borderColor": "rgb(54, 162, 235)",
-                        "tension": 0.3,
-                        "fill": False
-                    }]
-                },
-                "options": {
-                    "responsive": True,
-                    "plugins": {
-                        "title": {
-                            "display": True,
-                            "text": f"{commodity.title()} {metric.title()} in {country.title()}"
-                        }
-                    }
-                }
+        if "error" in result:
+            return {
+                "type": "forecast",
+                "answer": result["error"],
+                "data": {"error": result["error"]},
+                "sources": [],
+                "timings": {"routing": routing_time, "execution": elapsed, "total": time.time() - start}
             }
-            django_response["chart"] = chart_spec
 
-        if (output_format["include_csv"] or output_format["include_excel"]) and "forecast_series" in result:
-            csv_rows = []
-            for i, val in enumerate(result["forecast_series"]):
-                csv_rows.append({
-                    "period": f"Month {i+1}",
-                    "value": float(val),
-                    "commodity": result.get("commodity", "unknown"),
-                    "country": result.get("country", "unknown"),
-                    "metric": result.get("metric", "unknown")
-                })
-            if output_format["include_csv"]:
-                django_response["csv_data"] = csv_rows
-            if output_format["include_excel"]:
-                django_response["excel_data"] = csv_rows
-
-        django_response["thought_process"] = [
-            f"Retrieved data for {result.get('commodity', 'commodity')} in {result.get('country', 'country')}",
-            f"Used {result.get('model_used', 'Ensemble')} model",
-            f"Processed {result.get('data_points', 0)} data points"
-        ]
-        django_response["followup"] = f"Need this as a different format for {result.get('country', 'your region')}?"
-
+        human_answer = result.get("response", "Forecast generated.")
+        
         response = {
             "type": "forecast",
             "answer": human_answer,
-            "data": django_response,
+            "data": result, 
             "sources": result.get("sources", []),
             "timings": {"routing": routing_time, "execution": elapsed, "total": time.time() - start}
         }
