@@ -105,12 +105,7 @@ def generate_kenya_coffee_response() -> dict:
        "Forecast Methodology: Aggregated from World Bank (+50% 2025 Arabica baseline, -15% 2026 correction), Trading Economics futures ($3.58/lb Jan 2026), ING quarterly outlook, and NCE weekly trends. "
        "Adjusted +22% for Kenya's quality premium. Confidence interval: ±10% (based on 36-month historical volatility)."
    )
-   price_chart = {
-       "x": ["Nov 2025", "Dec 2025", "Jan 2026"],
-       "y": [380, 395, 385],
-       "title": "Kenya Coffee Auction Price Forecast (USD/50kg bag)",
-       "chart_type": "line"
-   }
+
    volume_chart = {
        "x": ["Nov 2025", "Dec 2025", "Jan 2026"],
        "y": [26.5, 29.0, 31.0],
@@ -127,7 +122,7 @@ def generate_kenya_coffee_response() -> dict:
            "Blended econometric model using ICO supply-demand balances, ICE Arabica futures, NCE auction data, and weather-adjusted yield projections. "
            "Kenyan premium derived from 2023–2025 regression (R² = 0.92 vs. global milds)."
        ),
-       "artifacts": [price_chart, volume_chart]
+       "artifacts": [volume_chart]
    }
 
 
