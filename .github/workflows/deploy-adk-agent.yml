@@ -18,7 +18,6 @@ jobs:
       SERVICE_NAME: zeno-agent
       REGION: europe-west1
       IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/zeno-economist
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
